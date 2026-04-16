@@ -12,7 +12,6 @@
         .form-block h4 { margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
         .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
         .tile-row { margin-bottom: 8px; }
-        .dynamic-area { margin-top: 20px; }
         .button-group { margin: 20px 0; }
         hr { margin: 20px 0; }
     </style>
@@ -50,15 +49,10 @@
 
 <hr>
 
-<!-- Button to add a new form block -->
-<div class="button-group">
-    <button id="addFormBtn">➕ Add a Form</button>
-</div>
-
 <!-- Container where form blocks will be added -->
 <div id="formsContainer"></div>
 
-<!-- Another "Add Form" button at the bottom for convenience -->
+<!-- "Add Form" button at the bottom -->
 <div class="button-group">
     <button id="addAnotherFormBtn">➕ Add Another Form</button>
 </div>
@@ -78,7 +72,7 @@
     
     // ========== DYNAMIC FORM BLOCK MANAGEMENT ==========
     const formsContainer = document.getElementById('formsContainer');
-    let formCounter = 0; // To generate unique IDs for each form block
+    let formCounter = 0;
     
     // Function to create a new form block
     function createFormBlock() {
@@ -88,7 +82,6 @@
         blockDiv.className = 'form-block';
         blockDiv.id = blockId;
         
-        // Header with type selector and remove button
         const headerHtml = `
             <h4>
                 <span>Form ${formCounter}</span>
@@ -107,14 +100,11 @@
             <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
         `;
         blockDiv.innerHTML = headerHtml;
-        
         formsContainer.appendChild(blockDiv);
         
-        // Get references
         const typeSelect = blockDiv.querySelector('.formTypeSelect');
         const fieldsArea = document.getElementById(`fields_${blockId}`);
         
-        // Function to generate fields based on selected type
         function generateFields(type) {
             let html = '';
             if (type === 'default') {
@@ -134,7 +124,6 @@
                     <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
                     <div class="multiFormContainer"></div>
                 `;
-                // Use setTimeout to ensure DOM is ready
                 setTimeout(() => {
                     const container = blockDiv.querySelector('.multiFormContainer');
                     const qtyInput = blockDiv.querySelector('.multiFormQty');
@@ -171,15 +160,13 @@
                         }
                         container.innerHTML = rowsHtml;
                         
-                        // Auto-fill feature: when first row is changed, fill others (but keep them editable)
                         const tileInputs = container.querySelectorAll('.specTileCount');
                         if (tileInputs.length > 0) {
+                            // When the first row changes, set ALL other rows to the same value
                             tileInputs[0].addEventListener('input', function(e) {
                                 const firstVal = e.target.value;
                                 for (let j = 1; j < tileInputs.length; j++) {
-                                    if (tileInputs[j].value === '') {
-                                        tileInputs[j].value = firstVal;
-                                    }
+                                    tileInputs[j].value = firstVal;
                                 }
                             });
                         }
@@ -192,36 +179,28 @@
             fieldsArea.innerHTML = html;
         }
         
-        // Initialize with default type
         generateFields('default');
-        
-        // Add change listener
         typeSelect.addEventListener('change', (e) => generateFields(e.target.value));
-        
         return blockDiv;
     }
     
-    // Function to remove a form block
     window.removeFormBlock = function(blockId) {
         const block = document.getElementById(blockId);
         if (block) block.remove();
     };
     
-    // Add initial form block on page load
+    // Add initial form block
     createFormBlock();
     
-    // Event listeners for "Add Form" buttons
-    document.getElementById('addFormBtn').addEventListener('click', createFormBlock);
+    // Single "Add Form" button
     document.getElementById('addAnotherFormBtn').addEventListener('click', createFormBlock);
     
     // ========== SUBMIT LOGIC ==========
     document.getElementById('submitBtn').addEventListener('click', async () => {
-        // Gather static data
         const rippedBy = document.getElementById('rippedBy').value;
         const printer = document.getElementById('printer').value;
         const colorMatch = document.getElementById('colorMatch').value;
         
-        // Gather all form blocks
         const forms = [];
         const formBlocks = document.querySelectorAll('.form-block');
         
@@ -259,14 +238,8 @@
             forms.push(formData);
         });
         
-        const payload = {
-            rippedBy,
-            printer,
-            colorMatch,
-            forms
-        };
+        const payload = { rippedBy, printer, colorMatch, forms };
         
-        // Send to n8n
         try {
             const response = await fetch(n8nWebhookUrl, {
                 method: 'POST',
