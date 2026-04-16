@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dynamic RIP Form</title>
+    <title>RIP List Form</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; box-sizing: border-box; }
         button { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
-        .dynamic-area { border: 1px solid #ccc; padding: 15px; margin: 20px 0; background: #f9f9f9; }
-        .tile-row { margin-bottom: 5px; }
+        .form-block { border: 1px solid #ccc; padding: 15px; margin: 20px 0; background: #f9f9f9; border-radius: 5px; }
+        .form-block h4 { margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
+        .tile-row { margin-bottom: 8px; }
+        .dynamic-area { margin-top: 20px; }
+        .button-group { margin: 20px 0; }
+        hr { margin: 20px 0; }
     </style>
 </head>
 <body>
@@ -24,9 +29,14 @@
 <div class="form-group">
     <label>Printer:</label>
     <select id="printer">
-        <option value="Kudu 2">Kudu 2</option>
+        <option value="5R1">5R1</option>
+        <option value="5R2">5R2</option>
         <option value="5R3">5R3</option>
-        <option value="DURST">DURST</option>
+        <option value="5R4">5R4</option>
+        <option value="FabriVu">FabriVu</option>
+        <option value="Kudu 1">Kudu 1</option>
+        <option value="Kudu 2">Kudu 2</option>
+        <option value="Kudu 3">Kudu 3</option>
     </select>
 </div>
 <div class="form-group">
@@ -38,136 +48,235 @@
     </select>
 </div>
 
-<!-- Form Type Selector -->
-<div class="form-group">
-    <label>Form Type:</label>
-    <select id="formTypeSelector">
-        <option value="">-- Select --</option>
-        <option value="default">Default</option>
-        <option value="singleNest">Single-File Nest</option>
-        <option value="multiNest">Multi-File Nest</option>
-        <option value="spectacular">Spectacular</option>
-    </select>
+<hr>
+
+<!-- Button to add a new form block -->
+<div class="button-group">
+    <button id="addFormBtn">➕ Add a Form</button>
 </div>
 
-<!-- Dynamic area where new fields will appear -->
-<div id="dynamicFormArea" class="dynamic-area"></div>
+<!-- Container where form blocks will be added -->
+<div id="formsContainer"></div>
+
+<!-- Another "Add Form" button at the bottom for convenience -->
+<div class="button-group">
+    <button id="addAnotherFormBtn">➕ Add Another Form</button>
+</div>
+
+<hr>
 
 <button id="submitBtn">Submit to n8n</button>
 
 <script>
-    const n8nWebhookUrl = 'https://your-n8n-instance.com/webhook/...'; // <-- REPLACE WITH YOUR WEBHOOK URL
-
-    const dynamicArea = document.getElementById('dynamicFormArea');
-    const typeSelector = document.getElementById('formTypeSelector');
-
-    // Function to generate dynamic fields based on selection
-    function generateDynamicFields(type) {
-        let html = '';
-        if (type === 'default') {
-            html = `
-                <h4>Default Form</h4>
-                <label>Form #:</label> <input type="text" id="defaultFormNum" placeholder="e.g., 1"><br>
-                <label>Tile #:</label> <input type="text" id="defaultTileNum" placeholder="e.g., 3"><br>
-                <label>File Name:</label> <input type="text" id="defaultFileName" placeholder="e.g., my_file.pdf"><br>
-            `;
-        } else if (type === 'singleNest') {
-            html = `
-                <h4>Single-File Nest</h4>
-                <label>Form #:</label> <input type="text" id="singleFormNum"><br>
-                <label>Nest Qty:</label> <input type="text" id="singleNestQty"><br>
-                <label>File Name:</label> <input type="text" id="singleFileName"><br>
-            `;
-        } else if (type === 'multiNest') {
-            html = `<h4>Multi-File Nest</h4>`;
-            html += `<label>Form Quantity:</label> <input type="number" id="multiFormQty" min="1" value="1"><br><br>`;
-            html += `<div id="multiFormContainer"></div>`;
-            
-            // Add a small delay to let the DOM update before populating
-            setTimeout(() => {
-                const container = document.getElementById('multiFormContainer');
-                const qtyInput = document.getElementById('multiFormQty');
-                function updateMultiFields() {
-                    const qty = parseInt(qtyInput.value) || 1;
-                    let fieldsHtml = '';
-                    for (let i = 1; i <= qty; i++) {
-                        fieldsHtml += `<label>Form #${i}:</label> <input type="text" class="multiFormNum" data-index="${i}"><br>`;
-                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br><br>`;
+    // ========== CONFIGURATION ==========
+    const n8nWebhookUrl = 'https://your-n8n-webhook-url'; // <-- REPLACE WITH YOUR ACTUAL WEBHOOK URL
+    
+    // Set default Ripped By based on time (6am-6pm = GH, else JD)
+    const currentHour = new Date().getHours();
+    const defaultRippedBy = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
+    document.getElementById('rippedBy').value = defaultRippedBy;
+    
+    // ========== DYNAMIC FORM BLOCK MANAGEMENT ==========
+    const formsContainer = document.getElementById('formsContainer');
+    let formCounter = 0; // To generate unique IDs for each form block
+    
+    // Function to create a new form block
+    function createFormBlock() {
+        formCounter++;
+        const blockId = `formBlock_${formCounter}`;
+        const blockDiv = document.createElement('div');
+        blockDiv.className = 'form-block';
+        blockDiv.id = blockId;
+        
+        // Header with type selector and remove button
+        const headerHtml = `
+            <h4>
+                <span>Form ${formCounter}</span>
+                <button class="remove-btn" onclick="removeFormBlock('${blockId}')">Remove</button>
+            </h4>
+            <div class="form-group">
+                <label>Form Type:</label>
+                <select class="formTypeSelect" data-block-id="${blockId}">
+                    <option value="">-- Select --</option>
+                    <option value="default" selected>Default</option>
+                    <option value="singleNest">Single-File Nest</option>
+                    <option value="multiNest">Multi-File Nest</option>
+                    <option value="spectacular">Spectacular</option>
+                </select>
+            </div>
+            <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
+        `;
+        blockDiv.innerHTML = headerHtml;
+        
+        formsContainer.appendChild(blockDiv);
+        
+        // Get references
+        const typeSelect = blockDiv.querySelector('.formTypeSelect');
+        const fieldsArea = document.getElementById(`fields_${blockId}`);
+        
+        // Function to generate fields based on selected type
+        function generateFields(type) {
+            let html = '';
+            if (type === 'default') {
+                html = `
+                    <label>Form #:</label> <input type="text" class="defaultFormNum" placeholder="e.g., 1"><br>
+                    <label>Tile #:</label> <input type="text" class="defaultTileNum" placeholder="e.g., 3"><br>
+                    <label>File Name:</label> <input type="text" class="defaultFileName" placeholder="e.g., my_file.pdf"><br>
+                `;
+            } else if (type === 'singleNest') {
+                html = `
+                    <label>Form #:</label> <input type="text" class="singleFormNum"><br>
+                    <label>Nest Qty:</label> <input type="text" class="singleNestQty"><br>
+                    <label>File Name:</label> <input type="text" class="singleFileName"><br>
+                `;
+            } else if (type === 'multiNest') {
+                html = `
+                    <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
+                    <div class="multiFormContainer"></div>
+                `;
+                // Use setTimeout to ensure DOM is ready
+                setTimeout(() => {
+                    const container = blockDiv.querySelector('.multiFormContainer');
+                    const qtyInput = blockDiv.querySelector('.multiFormQty');
+                    function updateMultiFields() {
+                        const qty = parseInt(qtyInput.value) || 1;
+                        let fieldsHtml = '';
+                        for (let i = 1; i <= qty; i++) {
+                            fieldsHtml += `<label>Form #${i}:</label> <input type="text" class="multiFormNum" data-index="${i}"><br>`;
+                            fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br><br>`;
+                        }
+                        container.innerHTML = fieldsHtml;
                     }
-                    container.innerHTML = fieldsHtml;
-                }
-                qtyInput.addEventListener('input', updateMultiFields);
-                updateMultiFields();
-            }, 10);
-        } else if (type === 'spectacular') {
-            html = `<h4>Spectacular</h4>`;
-            html += `<label>Form #:</label> <input type="text" id="specFormNum"><br>`;
-            html += `<label>File Name:</label> <input type="text" id="specFileName"><br>`;
-            html += `<label>Row Count:</label> <input type="number" id="specRowCount" min="1" value="1"><br><br>`;
-            html += `<div id="specRowContainer"></div>`;
-            
-            setTimeout(() => {
-                const container = document.getElementById('specRowContainer');
-                const rowCountInput = document.getElementById('specRowCount');
-                function updateSpecRows() {
-                    const rows = parseInt(rowCountInput.value) || 1;
-                    let rowsHtml = '';
-                    for (let i = 1; i <= rows; i++) {
-                        rowsHtml += `<div class="tile-row">`;
-                        rowsHtml += `<label># of tiles in Row ${i}:</label> <input type="text" class="specTileCount" data-row="${i}" placeholder="e.g., 5"><br>`;
-                        rowsHtml += `</div>`;
+                    qtyInput.addEventListener('input', updateMultiFields);
+                    updateMultiFields();
+                }, 10);
+            } else if (type === 'spectacular') {
+                html = `
+                    <label>Form #:</label> <input type="text" class="specFormNum"><br>
+                    <label>File Name:</label> <input type="text" class="specFileName"><br>
+                    <label>Row Count:</label> <input type="number" class="specRowCount" min="1" value="1"><br><br>
+                    <div class="specRowContainer"></div>
+                `;
+                setTimeout(() => {
+                    const container = blockDiv.querySelector('.specRowContainer');
+                    const rowCountInput = blockDiv.querySelector('.specRowCount');
+                    
+                    function updateSpecRows() {
+                        const rows = parseInt(rowCountInput.value) || 1;
+                        let rowsHtml = '';
+                        for (let i = 1; i <= rows; i++) {
+                            rowsHtml += `<div class="tile-row">`;
+                            rowsHtml += `<label># of tiles in Row ${i}:</label> <input type="text" class="specTileCount" data-row="${i}" placeholder="e.g., 5"><br>`;
+                            rowsHtml += `</div>`;
+                        }
+                        container.innerHTML = rowsHtml;
+                        
+                        // Auto-fill feature: when first row is changed, fill others (but keep them editable)
+                        const tileInputs = container.querySelectorAll('.specTileCount');
+                        if (tileInputs.length > 0) {
+                            tileInputs[0].addEventListener('input', function(e) {
+                                const firstVal = e.target.value;
+                                for (let j = 1; j < tileInputs.length; j++) {
+                                    if (tileInputs[j].value === '') {
+                                        tileInputs[j].value = firstVal;
+                                    }
+                                }
+                            });
+                        }
                     }
-                    container.innerHTML = rowsHtml;
-                }
-                rowCountInput.addEventListener('input', updateSpecRows);
-                updateSpecRows();
-            }, 10);
+                    
+                    rowCountInput.addEventListener('input', updateSpecRows);
+                    updateSpecRows();
+                }, 10);
+            }
+            fieldsArea.innerHTML = html;
         }
-        dynamicArea.innerHTML = html;
+        
+        // Initialize with default type
+        generateFields('default');
+        
+        // Add change listener
+        typeSelect.addEventListener('change', (e) => generateFields(e.target.value));
+        
+        return blockDiv;
     }
-
-    typeSelector.addEventListener('change', (e) => generateDynamicFields(e.target.value));
-
-    // Submit logic
+    
+    // Function to remove a form block
+    window.removeFormBlock = function(blockId) {
+        const block = document.getElementById(blockId);
+        if (block) block.remove();
+    };
+    
+    // Add initial form block on page load
+    createFormBlock();
+    
+    // Event listeners for "Add Form" buttons
+    document.getElementById('addFormBtn').addEventListener('click', createFormBlock);
+    document.getElementById('addAnotherFormBtn').addEventListener('click', createFormBlock);
+    
+    // ========== SUBMIT LOGIC ==========
     document.getElementById('submitBtn').addEventListener('click', async () => {
-        // 1. Gather static data
-        const formData = {
-            rippedBy: document.getElementById('rippedBy').value,
-            printer: document.getElementById('printer').value,
-            colorMatch: document.getElementById('colorMatch').value,
-            formType: typeSelector.value,
-            dynamicData: {}
+        // Gather static data
+        const rippedBy = document.getElementById('rippedBy').value;
+        const printer = document.getElementById('printer').value;
+        const colorMatch = document.getElementById('colorMatch').value;
+        
+        // Gather all form blocks
+        const forms = [];
+        const formBlocks = document.querySelectorAll('.form-block');
+        
+        formBlocks.forEach((block, index) => {
+            const typeSelect = block.querySelector('.formTypeSelect');
+            const type = typeSelect.value;
+            const formData = { type, order: index + 1 };
+            
+            if (type === 'default') {
+                formData.formNum = block.querySelector('.defaultFormNum')?.value || '';
+                formData.tileNum = block.querySelector('.defaultTileNum')?.value || '';
+                formData.fileName = block.querySelector('.defaultFileName')?.value || '';
+            } else if (type === 'singleNest') {
+                formData.formNum = block.querySelector('.singleFormNum')?.value || '';
+                formData.nestQty = block.querySelector('.singleNestQty')?.value || '';
+                formData.fileName = block.querySelector('.singleFileName')?.value || '';
+            } else if (type === 'multiNest') {
+                const multiForms = [];
+                block.querySelectorAll('.multiFormNum').forEach(input => {
+                    const idx = input.dataset.index;
+                    const fileName = block.querySelector(`.multiFileName[data-index="${idx}"]`)?.value || '';
+                    multiForms.push({ formNum: input.value, fileName });
+                });
+                formData.forms = multiForms;
+            } else if (type === 'spectacular') {
+                formData.formNum = block.querySelector('.specFormNum')?.value || '';
+                formData.fileName = block.querySelector('.specFileName')?.value || '';
+                const tiles = [];
+                block.querySelectorAll('.specTileCount').forEach(input => {
+                    tiles.push(input.value);
+                });
+                formData.tilesPerRow = tiles;
+            }
+            
+            forms.push(formData);
+        });
+        
+        const payload = {
+            rippedBy,
+            printer,
+            colorMatch,
+            forms
         };
-
-        // 2. Gather dynamic data based on selected type
-        const type = typeSelector.value;
-        if (type === 'default') {
-            formData.dynamicData = {
-                formNum: document.getElementById('defaultFormNum')?.value,
-                tileNum: document.getElementById('defaultTileNum')?.value,
-                fileName: document.getElementById('defaultFileName')?.value
-            };
-        } else if (type === 'multiNest') {
-            const forms = [];
-            document.querySelectorAll('.multiFormNum').forEach(input => {
-                const index = input.dataset.index;
-                const fileName = document.querySelector(`.multiFileName[data-index="${index}"]`)?.value;
-                forms.push({ formNum: input.value, fileName: fileName });
-            });
-            formData.dynamicData = { forms: forms };
-        } // ... (add logic for other types)
-
-        // 3. Send to n8n
+        
+        // Send to n8n
         try {
             const response = await fetch(n8nWebhookUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(payload)
             });
             if (response.ok) {
                 alert('Form submitted successfully!');
             } else {
-                alert('Submission failed.');
+                alert('Submission failed. Status: ' + response.status);
             }
         } catch (error) {
             console.error('Error:', error);
