@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic RIP Form</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
+        .dynamic-area { border: 1px solid #ccc; padding: 15px; margin: 20px 0; background: #f9f9f9; }
+        .tile-row { margin-bottom: 5px; }
+    </style>
+</head>
+<body>
+
+<h2>RIP List Form</h2>
+
+<!-- Static fields -->
+<div class="form-group">
+    <label>Ripped by:</label>
+    <input type="text" id="rippedBy">
+</div>
+<div class="form-group">
+    <label>Printer:</label>
+    <select id="printer">
+        <option value="Kudu 2">Kudu 2</option>
+        <option value="5R3">5R3</option>
+        <option value="DURST">DURST</option>
+    </select>
+</div>
+<div class="form-group">
+    <label>Color Match:</label>
+    <select id="colorMatch">
+        <option value="Laser">Laser</option>
+        <option value="Mini">Mini</option>
+        <option value="Pleasing">Pleasing</option>
+    </select>
+</div>
+
+<!-- Form Type Selector -->
+<div class="form-group">
+    <label>Form Type:</label>
+    <select id="formTypeSelector">
+        <option value="">-- Select --</option>
+        <option value="default">Default</option>
+        <option value="singleNest">Single-File Nest</option>
+        <option value="multiNest">Multi-File Nest</option>
+        <option value="spectacular">Spectacular</option>
+    </select>
+</div>
+
+<!-- Dynamic area where new fields will appear -->
+<div id="dynamicFormArea" class="dynamic-area"></div>
+
+<button id="submitBtn">Submit to n8n</button>
+
+<script>
+    const n8nWebhookUrl = 'https://your-n8n-instance.com/webhook/...'; // <-- REPLACE WITH YOUR WEBHOOK URL
+
+    const dynamicArea = document.getElementById('dynamicFormArea');
+    const typeSelector = document.getElementById('formTypeSelector');
+
+    // Function to generate dynamic fields based on selection
+    function generateDynamicFields(type) {
+        let html = '';
+        if (type === 'default') {
+            html = `
+                <h4>Default Form</h4>
+                <label>Form #:</label> <input type="text" id="defaultFormNum" placeholder="e.g., 1"><br>
+                <label>Tile #:</label> <input type="text" id="defaultTileNum" placeholder="e.g., 3"><br>
+                <label>File Name:</label> <input type="text" id="defaultFileName" placeholder="e.g., my_file.pdf"><br>
+            `;
+        } else if (type === 'singleNest') {
+            html = `
+                <h4>Single-File Nest</h4>
+                <label>Form #:</label> <input type="text" id="singleFormNum"><br>
+                <label>Nest Qty:</label> <input type="text" id="singleNestQty"><br>
+                <label>File Name:</label> <input type="text" id="singleFileName"><br>
+            `;
+        } else if (type === 'multiNest') {
+            html = `<h4>Multi-File Nest</h4>`;
+            html += `<label>Form Quantity:</label> <input type="number" id="multiFormQty" min="1" value="1"><br><br>`;
+            html += `<div id="multiFormContainer"></div>`;
+            
+            // Add a small delay to let the DOM update before populating
+            setTimeout(() => {
+                const container = document.getElementById('multiFormContainer');
+                const qtyInput = document.getElementById('multiFormQty');
+                function updateMultiFields() {
+                    const qty = parseInt(qtyInput.value) || 1;
+                    let fieldsHtml = '';
+                    for (let i = 1; i <= qty; i++) {
+                        fieldsHtml += `<label>Form #${i}:</label> <input type="text" class="multiFormNum" data-index="${i}"><br>`;
+                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br><br>`;
+                    }
+                    container.innerHTML = fieldsHtml;
+                }
+                qtyInput.addEventListener('input', updateMultiFields);
+                updateMultiFields();
+            }, 10);
+        } else if (type === 'spectacular') {
+            html = `<h4>Spectacular</h4>`;
+            html += `<label>Form #:</label> <input type="text" id="specFormNum"><br>`;
+            html += `<label>File Name:</label> <input type="text" id="specFileName"><br>`;
+            html += `<label>Row Count:</label> <input type="number" id="specRowCount" min="1" value="1"><br><br>`;
+            html += `<div id="specRowContainer"></div>`;
+            
+            setTimeout(() => {
+                const container = document.getElementById('specRowContainer');
+                const rowCountInput = document.getElementById('specRowCount');
+                function updateSpecRows() {
+                    const rows = parseInt(rowCountInput.value) || 1;
+                    let rowsHtml = '';
+                    for (let i = 1; i <= rows; i++) {
+                        rowsHtml += `<div class="tile-row">`;
+                        rowsHtml += `<label># of tiles in Row ${i}:</label> <input type="text" class="specTileCount" data-row="${i}" placeholder="e.g., 5"><br>`;
+                        rowsHtml += `</div>`;
+                    }
+                    container.innerHTML = rowsHtml;
+                }
+                rowCountInput.addEventListener('input', updateSpecRows);
+                updateSpecRows();
+            }, 10);
+        }
+        dynamicArea.innerHTML = html;
+    }
+
+    typeSelector.addEventListener('change', (e) => generateDynamicFields(e.target.value));
+
+    // Submit logic
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+        // 1. Gather static data
+        const formData = {
+            rippedBy: document.getElementById('rippedBy').value,
+            printer: document.getElementById('printer').value,
+            colorMatch: document.getElementById('colorMatch').value,
+            formType: typeSelector.value,
+            dynamicData: {}
+        };
+
+        // 2. Gather dynamic data based on selected type
+        const type = typeSelector.value;
+        if (type === 'default') {
+            formData.dynamicData = {
+                formNum: document.getElementById('defaultFormNum')?.value,
+                tileNum: document.getElementById('defaultTileNum')?.value,
+                fileName: document.getElementById('defaultFileName')?.value
+            };
+        } else if (type === 'multiNest') {
+            const forms = [];
+            document.querySelectorAll('.multiFormNum').forEach(input => {
+                const index = input.dataset.index;
+                const fileName = document.querySelector(`.multiFileName[data-index="${index}"]`)?.value;
+                forms.push({ formNum: input.value, fileName: fileName });
+            });
+            formData.dynamicData = { forms: forms };
+        } // ... (add logic for other types)
+
+        // 3. Send to n8n
+        try {
+            const response = await fetch(n8nWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            if (response.ok) {
+                alert('Form submitted successfully!');
+            } else {
+                alert('Submission failed.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Network error.');
+        }
+    });
+</script>
+</body>
+</html>
