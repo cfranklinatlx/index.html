@@ -127,6 +127,7 @@
                 `;
             } else if (type === 'multiNest') {
                 html = `
+                    <label>Amount in Nest:</label> <input type="text" class="multiNestAmount" placeholder="e.g., 5"><br>
                     <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
                     <div class="multiFormContainer"></div>
                 `;
@@ -231,6 +232,7 @@
                 formData.nestQty = block.querySelector('.singleNestQty')?.value || '';
                 formData.fileName = block.querySelector('.singleFileName')?.value || '';
             } else if (type === 'multiNest') {
+                formData.nestAmount = block.querySelector('.multiNestAmount')?.value || '';
                 const multiForms = [];
                 block.querySelectorAll('.multiFormNum').forEach(input => {
                     const idx = input.dataset.index;
