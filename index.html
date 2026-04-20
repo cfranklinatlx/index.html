@@ -8,12 +8,30 @@
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; box-sizing: border-box; }
         button { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
-        .form-block { border: 1px solid #ccc; padding: 15px; margin: 20px 0; background: #f9f9f9; border-radius: 5px; }
+        .form-block { 
+            border: 2px solid #ccc; 
+            padding: 15px; 
+            margin: 20px 0; 
+            background: #f9f9f9; 
+            border-radius: 5px;
+            transition: border-color 0.2s;
+            position: relative;
+        }
+        .form-block.drag-over { border-color: #007bff; border-style: dashed; background: #eef6ff; }
         .form-block h4 { margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
         .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
         .tile-row { margin-bottom: 8px; }
         .button-group { margin: 20px 0; }
         hr { margin: 20px 0; }
+        .drop-zone-left {
+            position: absolute;
+            left: -30px;
+            top: 0;
+            width: 20px;
+            height: 100%;
+            background: transparent;
+            z-index: 10;
+        }
 
         /* Submission overlay styles */
         #submissionOverlay {
@@ -137,9 +155,62 @@
     const defaultRippedBy = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     document.getElementById('rippedBy').value = defaultRippedBy;
     
+    // ========== HELPER: Clean filename (remove .pdf) ==========
+    function cleanFileName(fileName) {
+        return fileName.replace(/\.pdf$/i, '');
+    }
+    
+    // ========== DRAG & DROP: Global listeners ==========
+    document.body.addEventListener('dragover', (e) => e.preventDefault());
+    document.body.addEventListener('drop', (e) => e.preventDefault());
+    
     // ========== DYNAMIC FORM BLOCK MANAGEMENT ==========
     const formsContainer = document.getElementById('formsContainer');
     let formCounter = 0;
+    
+    // Function to populate a form block with file names
+    function populateFormBlock(block, files, replaceAll = true) {
+        const typeSelect = block.querySelector('.formTypeSelect');
+        const type = typeSelect.value;
+        const fileNames = files.map(f => cleanFileName(f.name));
+        
+        if (type === 'default') {
+            const fileNameInput = block.querySelector('.defaultFileName');
+            if (fileNameInput) {
+                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+            }
+        } else if (type === 'singleNest') {
+            const fileNameInput = block.querySelector('.singleFileName');
+            if (fileNameInput) {
+                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+            }
+        } else if (type === 'multiNest') {
+            // For multiNest, each file gets its own row
+            const container = block.querySelector('.multiFormContainer');
+            const qtyInput = block.querySelector('.multiFormQty');
+            if (container && qtyInput) {
+                const newQty = replaceAll ? files.length : parseInt(qtyInput.value) + files.length;
+                qtyInput.value = newQty;
+                qtyInput.dispatchEvent(new Event('input'));
+                // Wait for DOM update
+                setTimeout(() => {
+                    const fileNameInputs = block.querySelectorAll('.multiFileName');
+                    const startIdx = replaceAll ? 0 : fileNameInputs.length - files.length;
+                    files.forEach((file, i) => {
+                        const idx = startIdx + i;
+                        if (fileNameInputs[idx]) {
+                            fileNameInputs[idx].value = cleanFileName(file.name);
+                        }
+                    });
+                }, 50);
+            }
+        } else if (type === 'spectacular') {
+            const fileNameInput = block.querySelector('.specFileName');
+            if (fileNameInput) {
+                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+            }
+        }
+    }
     
     function createFormBlock() {
         formCounter++;
@@ -147,6 +218,48 @@
         const blockDiv = document.createElement('div');
         blockDiv.className = 'form-block';
         blockDiv.id = blockId;
+        blockDiv.setAttribute('data-form-num', formCounter);
+        
+        // Left drop zone (creates new forms)
+        const leftDropZone = document.createElement('div');
+        leftDropZone.className = 'drop-zone-left';
+        leftDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        leftDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (files.length === 0) return;
+            
+            // Create a new form block for EACH file
+            files.forEach(file => {
+                const newBlock = createFormBlock();
+                populateFormBlock(newBlock, [file], true);
+            });
+        });
+        blockDiv.appendChild(leftDropZone);
+        
+        // Drag over / drop on the block itself
+        blockDiv.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            blockDiv.classList.add('drag-over');
+        });
+        blockDiv.addEventListener('dragleave', () => {
+            blockDiv.classList.remove('drag-over');
+        });
+        blockDiv.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            blockDiv.classList.remove('drag-over');
+            
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (files.length === 0) return;
+            
+            populateFormBlock(blockDiv, files, true);
+        });
         
         const headerHtml = `
             <h4>
@@ -165,7 +278,7 @@
             </div>
             <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
         `;
-        blockDiv.innerHTML = headerHtml;
+        blockDiv.insertAdjacentHTML('beforeend', headerHtml);
         formsContainer.appendChild(blockDiv);
         
         const typeSelect = blockDiv.querySelector('.formTypeSelect');
@@ -175,15 +288,13 @@
             let html = '';
             if (type === 'default') {
                 html = `
-                    <label>Form #:</label> <input type="text" class="defaultFormNum" placeholder="e.g., 1"><br>
+                    <label>File Name:</label> <input type="text" class="defaultFileName" placeholder="e.g., my_file"><br>
                     <label>Tile #:</label> <input type="text" class="defaultTileNum" placeholder="e.g., 3"><br>
-                    <label>File Name:</label> <input type="text" class="defaultFileName" placeholder="e.g., my_file.pdf"><br>
                 `;
             } else if (type === 'singleNest') {
                 html = `
-                    <label>Form #:</label> <input type="text" class="singleFormNum"><br>
-                    <label>Nest Qty:</label> <input type="text" class="singleNestQty"><br>
                     <label>File Name:</label> <input type="text" class="singleFileName"><br>
+                    <label>Nest Qty:</label> <input type="text" class="singleNestQty"><br>
                 `;
             } else if (type === 'multiNest') {
                 html = `
@@ -197,7 +308,6 @@
                         const qty = parseInt(qtyInput.value) || 1;
                         let fieldsHtml = '';
                         for (let i = 1; i <= qty; i++) {
-                            fieldsHtml += `<label>Form #${i}:</label> <input type="text" class="multiFormNum" data-index="${i}"><br>`;
                             fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br>`;
                             fieldsHtml += `<label>Amount in Nest #${i}:</label> <input type="text" class="multiNestAmount" data-index="${i}" placeholder="e.g., 5"><br><br>`;
                         }
@@ -208,7 +318,6 @@
                 }, 10);
             } else if (type === 'spectacular') {
                 html = `
-                    <label>Form #:</label> <input type="text" class="specFormNum"><br>
                     <label>File Name:</label> <input type="text" class="specFileName"><br>
                     <label>Row Count:</label> <input type="number" class="specRowCount" min="1" value="1"><br><br>
                     <div class="specRowContainer"></div>
@@ -258,7 +367,7 @@
     createFormBlock();
     document.getElementById('addAnotherFormBtn').addEventListener('click', createFormBlock);
     
-    // ========== SUBMIT LOGIC WITH OVERLAY ==========
+    // ========== SUBMIT LOGIC WITH OVERLAY (unchanged) ==========
     const overlay = document.getElementById('submissionOverlay');
     const overlayTitle = document.getElementById('overlayTitle');
     const summaryContent = document.getElementById('summaryContent');
@@ -278,46 +387,37 @@
             return;
         }
         
-        // Gather all form blocks
         const forms = [];
         const formBlocks = document.querySelectorAll('.form-block');
         
         formBlocks.forEach((block, index) => {
             const typeSelect = block.querySelector('.formTypeSelect');
             const type = typeSelect.value;
-            const formData = { type, order: index + 1 };
+            const formData = { type, order: index + 1, formNum: block.querySelector('h4 span').textContent.replace('Form ', '') };
             
             if (type === 'default') {
-                formData.formNum = block.querySelector('.defaultFormNum')?.value || '';
                 formData.tileNum = block.querySelector('.defaultTileNum')?.value || '';
                 formData.fileName = block.querySelector('.defaultFileName')?.value || '';
             } else if (type === 'singleNest') {
-                formData.formNum = block.querySelector('.singleFormNum')?.value || '';
                 formData.nestQty = block.querySelector('.singleNestQty')?.value || '';
                 formData.fileName = block.querySelector('.singleFileName')?.value || '';
             } else if (type === 'multiNest') {
                 const multiForms = [];
-                block.querySelectorAll('.multiFormNum').forEach(input => {
-                    const idx = input.dataset.index;
-                    const fileName = block.querySelector(`.multiFileName[data-index="${idx}"]`)?.value || '';
-                    const nestAmount = block.querySelector(`.multiNestAmount[data-index="${idx}"]`)?.value || '';
-                    multiForms.push({ formNum: input.value, fileName, nestAmount });
+                block.querySelectorAll('.multiFileName').forEach((input, i) => {
+                    const nestAmount = block.querySelectorAll('.multiNestAmount')[i]?.value || '';
+                    multiForms.push({ fileName: input.value, nestAmount });
                 });
                 formData.forms = multiForms;
             } else if (type === 'spectacular') {
-                formData.formNum = block.querySelector('.specFormNum')?.value || '';
                 formData.fileName = block.querySelector('.specFileName')?.value || '';
                 const tiles = [];
-                block.querySelectorAll('.specTileCount').forEach(input => {
-                    tiles.push(input.value);
-                });
+                block.querySelectorAll('.specTileCount').forEach(input => tiles.push(input.value));
                 formData.tilesPerRow = tiles;
             }
             
             forms.push(formData);
         });
         
-        // Build summary
         let summaryHtml = `
             <div class="summary-item"><strong>Ripped by:</strong> ${rippedBy}</div>
             <div class="summary-item"><strong>Printer:</strong> ${printer}</div>
@@ -326,7 +426,6 @@
             <div class="summary-item"><strong>Forms:</strong> ${forms.length}</div>
         `;
         
-        // Show overlay
         overlayTitle.textContent = 'Processing Your RIP List';
         summaryContent.innerHTML = summaryHtml;
         spinner.style.display = 'block';
@@ -335,7 +434,6 @@
         errorContainer.innerHTML = '';
         overlay.style.display = 'flex';
         
-        // Build FormData payload
         const formDataPayload = new FormData();
         formDataPayload.append('rippedBy', rippedBy);
         formDataPayload.append('printer', printer);
@@ -354,11 +452,8 @@
                 spinner.style.display = 'none';
                 statusMessage.textContent = 'RIP List Ready!';
                 
-                // Handle response (could be single URL or array)
                 let url = data.url;
-                if (!url && Array.isArray(data) && data[0]) {
-                    url = data[0].url;
-                }
+                if (!url && Array.isArray(data) && data[0]) url = data[0].url;
                 
                 if (url) {
                     downloadContainer.innerHTML = `
@@ -384,11 +479,8 @@
         }
     });
     
-    // Allow closing overlay by clicking outside (optional)
     overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-            overlay.style.display = 'none';
-        }
+        if (e.target === overlay) overlay.style.display = 'none';
     });
 </script>
 </body>
