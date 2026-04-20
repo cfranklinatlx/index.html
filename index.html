@@ -9,7 +9,6 @@
         input, select { width: 100%; padding: 8px; box-sizing: border-box; }
         button { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
         
-        /* Layout: left drop zone + main content */
         .app-container { display: flex; gap: 20px; }
         .batch-drop-zone {
             width: 120px;
@@ -42,8 +41,11 @@
         }
         .form-block.drag-over { border-color: #007bff; border-style: dashed; background: #eef6ff; }
         .form-block h4 { margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+        .form-block h4 span { font-size: 1.5em; margin-right: 10px; }
         .remove-btn { background: #dc3545; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; }
         .tile-row { margin-bottom: 8px; }
+        .version-row { border-top: 1px dashed #ccc; padding-top: 15px; margin-top: 15px; }
+        .version-row:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
         .button-group { margin: 20px 0; }
         hr { margin: 20px 0; }
         .drop-zone-left {
@@ -56,7 +58,6 @@
             z-index: 10;
         }
 
-        /* Modal styles */
         #typeSelectorModal {
             display: none;
             position: fixed;
@@ -78,7 +79,6 @@
         .modal-content select { margin: 20px 0; padding: 10px; }
         .modal-content button { margin: 5px; }
 
-        /* Submission overlay styles */
         #submissionOverlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
@@ -129,7 +129,7 @@
 <h2>RIP List Form</h2>
 
 <div class="app-container">
-    <!-- Left batch drop zone -->
+    <!-- Left batch drop zone (UNTOUCHED) -->
     <div id="batchDropZone" class="batch-drop-zone">
         <p>📁</p>
         <p>Drop PDFs here</p>
@@ -164,7 +164,6 @@
             </select>
         </div>
 
-        <!-- PDF File Upload -->
         <div class="form-group">
             <label>Upload Job Ticket PDF:</label>
             <input type="file" id="jobTicketPdf" accept=".pdf,application/pdf" required>
@@ -172,10 +171,8 @@
 
         <hr>
 
-        <!-- Container where form blocks will be added -->
         <div id="formsContainer"></div>
 
-        <!-- "Add Form" button -->
         <div class="button-group">
             <button id="addAnotherFormBtn">➕ Add Empty Form</button>
         </div>
@@ -219,79 +216,51 @@
     // ========== CONFIGURATION ==========
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
     
-    // Set default Ripped By
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     
+    // Animal emojis for form labels
+    const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
+    const usedEmojis = new Set();
+    
+    function getRandomEmoji() {
+        const available = animalEmojis.filter(e => !usedEmojis.has(e));
+        if (available.length === 0) {
+            usedEmojis.clear();
+            return animalEmojis[0];
+        }
+        const emoji = available[Math.floor(Math.random() * available.length)];
+        usedEmojis.add(emoji);
+        return emoji;
+    }
+    
+    function releaseEmoji(emoji) {
+        usedEmojis.delete(emoji);
+    }
+    
     // ========== GLOBAL STATE ==========
     const formsContainer = document.getElementById('formsContainer');
-    let formCounter = 0;
     let pendingBatchFiles = [];
     
-    // Modal elements
     const modal = document.getElementById('typeSelectorModal');
     const fileCountSpan = document.getElementById('fileCount');
     const batchTypeSelect = document.getElementById('batchTypeSelect');
     
-    // ========== HELPER: Clean filename ==========
     function cleanFileName(fileName) {
         return fileName.replace(/\.pdf$/i, '');
     }
     
-    // ========== POPULATE FORM BLOCK (supports multiple files) ==========
-    function populateFormBlock(block, files, replaceAll = true) {
-        const typeSelect = block.querySelector('.formTypeSelect');
-        const type = typeSelect.value;
-        const fileNames = files.map(f => cleanFileName(f.name));
-        
-        if (type === 'default') {
-            // For default: first file goes to File Name, additional files create new rows? 
-            // We'll treat it like singleNest: just set the first file name (can be extended)
-            const fileNameInput = block.querySelector('.defaultFileName');
-            if (fileNameInput) {
-                fileNameInput.value = fileNames.join(', ');
-            }
-        } else if (type === 'singleNest') {
-            const fileNameInput = block.querySelector('.singleFileName');
-            if (fileNameInput) {
-                fileNameInput.value = fileNames.join(', ');
-            }
-        } else if (type === 'multiNest') {
-            const container = block.querySelector('.multiFormContainer');
-            const qtyInput = block.querySelector('.multiFormQty');
-            if (container && qtyInput) {
-                const newQty = replaceAll ? files.length : parseInt(qtyInput.value) + files.length;
-                qtyInput.value = newQty;
-                qtyInput.dispatchEvent(new Event('input'));
-                setTimeout(() => {
-                    const fileNameInputs = block.querySelectorAll('.multiFileName');
-                    const startIdx = replaceAll ? 0 : fileNameInputs.length - files.length;
-                    files.forEach((file, i) => {
-                        const idx = startIdx + i;
-                        if (fileNameInputs[idx]) {
-                            fileNameInputs[idx].value = cleanFileName(file.name);
-                        }
-                    });
-                }, 50);
-            }
-        } else if (type === 'spectacular') {
-            const fileNameInput = block.querySelector('.specFileName');
-            if (fileNameInput) {
-                fileNameInput.value = fileNames.join(', ');
-            }
-        }
-    }
-    
     // ========== CREATE FORM BLOCK ==========
     function createFormBlock(formType = 'default') {
-        formCounter++;
-        const blockId = `formBlock_${formCounter}`;
+        const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const blockDiv = document.createElement('div');
         blockDiv.className = 'form-block';
         blockDiv.id = blockId;
-        blockDiv.setAttribute('data-form-num', formCounter);
         
-        // Left drop zone (creates new forms)
+        const formEmoji = getRandomEmoji();
+        blockDiv.setAttribute('data-emoji', formEmoji);
+        
+        // Left drop zone (creates new forms - UNTOUCHED)
         const leftDropZone = document.createElement('div');
         leftDropZone.className = 'drop-zone-left';
         leftDropZone.addEventListener('dragover', (e) => {
@@ -303,7 +272,7 @@
             if (files.length === 0) return;
             files.forEach(file => {
                 const newBlock = createFormBlock('default');
-                populateFormBlock(newBlock, [file], true);
+                populateFormBlockWithFiles(newBlock, [file]);
             });
         });
         blockDiv.appendChild(leftDropZone);
@@ -319,13 +288,13 @@
             blockDiv.classList.remove('drag-over');
             const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
             if (files.length === 0) return;
-            populateFormBlock(blockDiv, files, true);
+            populateFormBlockWithFiles(blockDiv, files);
         });
         
         const headerHtml = `
             <h4>
-                <span>Form ${formCounter}</span>
-                <button class="remove-btn" onclick="removeFormBlock('${blockId}')">Remove</button>
+                <span>${formEmoji}</span>
+                <button class="remove-btn" onclick="removeFormBlock('${blockId}', '${formEmoji}')">Remove</button>
             </h4>
             <div class="form-group">
                 <label>Form Type:</label>
@@ -349,65 +318,110 @@
             let html = '';
             if (type === 'default') {
                 html = `
-                    <label>File Name:</label> <input type="text" class="defaultFileName" placeholder="e.g., my_file"><br>
-                    <label>Tile #:</label> <input type="text" class="defaultTileNum" placeholder="e.g., 3"><br>
+                    <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
+                    <div class="versionContainer"></div>
                 `;
             } else if (type === 'singleNest') {
                 html = `
-                    <label>File Name:</label> <input type="text" class="singleFileName"><br>
-                    <label>Nest Qty:</label> <input type="text" class="singleNestQty"><br>
+                    <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
+                    <div class="versionContainer"></div>
                 `;
             } else if (type === 'multiNest') {
                 html = `
                     <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
                     <div class="multiFormContainer"></div>
                 `;
-                setTimeout(() => {
-                    const container = blockDiv.querySelector('.multiFormContainer');
-                    const qtyInput = blockDiv.querySelector('.multiFormQty');
-                    function updateMultiFields() {
-                        const qty = parseInt(qtyInput.value) || 1;
-                        let fieldsHtml = '';
-                        for (let i = 1; i <= qty; i++) {
-                            fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br>`;
-                            fieldsHtml += `<label>Amount in Nest #${i}:</label> <input type="text" class="multiNestAmount" data-index="${i}" placeholder="e.g., 5"><br><br>`;
-                        }
-                        container.innerHTML = fieldsHtml;
-                    }
-                    qtyInput.addEventListener('input', updateMultiFields);
-                    updateMultiFields();
-                }, 10);
             } else if (type === 'spectacular') {
                 html = `
-                    <label>File Name:</label> <input type="text" class="specFileName"><br>
-                    <label>Row Count:</label> <input type="number" class="specRowCount" min="1" value="1"><br><br>
-                    <div class="specRowContainer"></div>
+                    <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
+                    <div class="versionContainer"></div>
                 `;
-                setTimeout(() => {
-                    const container = blockDiv.querySelector('.specRowContainer');
-                    const rowCountInput = blockDiv.querySelector('.specRowCount');
-                    function updateSpecRows() {
-                        const rows = parseInt(rowCountInput.value) || 1;
-                        let rowsHtml = '';
-                        for (let i = 1; i <= rows; i++) {
-                            rowsHtml += `<div class="tile-row">`;
-                            rowsHtml += `<label># of tiles in Row ${i}:</label> <input type="text" class="specTileCount" data-row="${i}" placeholder="e.g., 5"><br>`;
-                            rowsHtml += `</div>`;
-                        }
-                        container.innerHTML = rowsHtml;
-                        const tileInputs = container.querySelectorAll('.specTileCount');
-                        if (tileInputs.length > 0) {
-                            tileInputs[0].addEventListener('input', function(e) {
-                                const firstVal = e.target.value;
-                                for (let j = 1; j < tileInputs.length; j++) tileInputs[j].value = firstVal;
-                            });
-                        }
-                    }
-                    rowCountInput.addEventListener('input', updateSpecRows);
-                    updateSpecRows();
-                }, 10);
             }
             fieldsArea.innerHTML = html;
+            
+            if (type === 'multiNest') {
+                const container = blockDiv.querySelector('.multiFormContainer');
+                const qtyInput = blockDiv.querySelector('.multiFormQty');
+                function updateMultiFields() {
+                    const qty = parseInt(qtyInput.value) || 1;
+                    let fieldsHtml = '';
+                    for (let i = 1; i <= qty; i++) {
+                        fieldsHtml += `<div class="version-row">`;
+                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br>`;
+                        fieldsHtml += `<label>Amount in Nest #${i}:</label> <input type="text" class="multiNestAmount" data-index="${i}" placeholder="e.g., 5"><br>`;
+                        fieldsHtml += `</div>`;
+                    }
+                    container.innerHTML = fieldsHtml;
+                }
+                qtyInput.addEventListener('input', updateMultiFields);
+                updateMultiFields();
+            } else if (type === 'default') {
+                const container = blockDiv.querySelector('.versionContainer');
+                const qtyInput = blockDiv.querySelector('.versionQty');
+                function updateVersionFields() {
+                    const qty = parseInt(qtyInput.value) || 1;
+                    let fieldsHtml = '';
+                    for (let i = 1; i <= qty; i++) {
+                        fieldsHtml += `<div class="version-row">`;
+                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file"><br>`;
+                        fieldsHtml += `<label>Tile #${i}:</label> <input type="text" class="defaultTileNum" data-index="${i}" placeholder="e.g., 3"><br>`;
+                        fieldsHtml += `</div>`;
+                    }
+                    container.innerHTML = fieldsHtml;
+                }
+                qtyInput.addEventListener('input', updateVersionFields);
+                updateVersionFields();
+            } else if (type === 'singleNest') {
+                const container = blockDiv.querySelector('.versionContainer');
+                const qtyInput = blockDiv.querySelector('.versionQty');
+                function updateVersionFields() {
+                    const qty = parseInt(qtyInput.value) || 1;
+                    let fieldsHtml = '';
+                    for (let i = 1; i <= qty; i++) {
+                        fieldsHtml += `<div class="version-row">`;
+                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="singleFileName" data-index="${i}"><br>`;
+                        fieldsHtml += `<label>Nest Qty #${i}:</label> <input type="text" class="singleNestQty" data-index="${i}"><br>`;
+                        fieldsHtml += `</div>`;
+                    }
+                    container.innerHTML = fieldsHtml;
+                }
+                qtyInput.addEventListener('input', updateVersionFields);
+                updateVersionFields();
+            } else if (type === 'spectacular') {
+                const container = blockDiv.querySelector('.versionContainer');
+                const qtyInput = blockDiv.querySelector('.versionQty');
+                function updateVersionFields() {
+                    const qty = parseInt(qtyInput.value) || 1;
+                    let fieldsHtml = '';
+                    for (let i = 1; i <= qty; i++) {
+                        fieldsHtml += `<div class="version-row">`;
+                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="specFileName" data-index="${i}"><br>`;
+                        fieldsHtml += `<label>Row Count #${i}:</label> <input type="number" class="specRowCount" data-index="${i}" min="1" value="1"><br>`;
+                        fieldsHtml += `<div class="specRowContainer_${i}"></div>`;
+                        fieldsHtml += `</div>`;
+                    }
+                    container.innerHTML = fieldsHtml;
+                    
+                    for (let i = 1; i <= qty; i++) {
+                        const rowContainer = container.querySelector(`.specRowContainer_${i}`);
+                        const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
+                        function updateSpecRows() {
+                            const rows = parseInt(rowCountInput.value) || 1;
+                            let rowsHtml = '';
+                            for (let r = 1; r <= rows; r++) {
+                                rowsHtml += `<div class="tile-row">`;
+                                rowsHtml += `<label># of tiles in Row ${r}:</label> <input type="text" class="specTileCount" data-version="${i}" data-row="${r}" placeholder="e.g., 5"><br>`;
+                                rowsHtml += `</div>`;
+                            }
+                            rowContainer.innerHTML = rowsHtml;
+                        }
+                        rowCountInput.addEventListener('input', updateSpecRows);
+                        updateSpecRows();
+                    }
+                }
+                qtyInput.addEventListener('input', updateVersionFields);
+                updateVersionFields();
+            }
         }
         
         generateFields(formType);
@@ -415,15 +429,61 @@
         return blockDiv;
     }
     
-    window.removeFormBlock = function(blockId) {
-        document.getElementById(blockId)?.remove();
+    function populateFormBlockWithFiles(block, files) {
+        const typeSelect = block.querySelector('.formTypeSelect');
+        const type = typeSelect.value;
+        const fileNames = files.map(f => cleanFileName(f.name));
+        
+        if (type === 'multiNest') {
+            const qtyInput = block.querySelector('.multiFormQty');
+            if (qtyInput) {
+                qtyInput.value = files.length;
+                qtyInput.dispatchEvent(new Event('input'));
+                setTimeout(() => {
+                    const fileNameInputs = block.querySelectorAll('.multiFileName');
+                    files.forEach((file, i) => {
+                        if (fileNameInputs[i]) {
+                            fileNameInputs[i].value = cleanFileName(file.name);
+                        }
+                    });
+                }, 50);
+            }
+        } else {
+            const qtyInput = block.querySelector('.versionQty');
+            if (qtyInput) {
+                qtyInput.value = files.length;
+                qtyInput.dispatchEvent(new Event('input'));
+                setTimeout(() => {
+                    let fileNameInputs;
+                    if (type === 'default') fileNameInputs = block.querySelectorAll('.defaultFileName');
+                    else if (type === 'singleNest') fileNameInputs = block.querySelectorAll('.singleFileName');
+                    else if (type === 'spectacular') fileNameInputs = block.querySelectorAll('.specFileName');
+                    
+                    if (fileNameInputs) {
+                        files.forEach((file, i) => {
+                            if (fileNameInputs[i]) {
+                                fileNameInputs[i].value = cleanFileName(file.name);
+                            }
+                        });
+                    }
+                }, 50);
+            }
+        }
+    }
+    
+    window.removeFormBlock = function(blockId, emoji) {
+        const block = document.getElementById(blockId);
+        if (block) {
+            releaseEmoji(emoji);
+            block.remove();
+        }
     };
     
     // Initialize with one default form
     createFormBlock('default');
     document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
     
-    // ========== BATCH DROP ZONE ==========
+    // ========== BATCH DROP ZONE (UNTOUCHED) ==========
     const batchZone = document.getElementById('batchDropZone');
     batchZone.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -445,7 +505,7 @@
         const selectedType = batchTypeSelect.value;
         pendingBatchFiles.forEach(file => {
             const newBlock = createFormBlock(selectedType);
-            populateFormBlock(newBlock, [file], true);
+            populateFormBlockWithFiles(newBlock, [file]);
         });
         modal.style.display = 'none';
         pendingBatchFiles = [];
@@ -456,12 +516,11 @@
         pendingBatchFiles = [];
     });
     
-    // Close modal on outside click
     modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.style.display = 'none';
     });
     
-    // ========== SUBMIT LOGIC (unchanged) ==========
+    // ========== SUBMIT LOGIC (UPDATED FOR NEW STRUCTURE) ==========
     const overlay = document.getElementById('submissionOverlay');
     const overlayTitle = document.getElementById('overlayTitle');
     const summaryContent = document.getElementById('summaryContent');
@@ -485,26 +544,39 @@
         document.querySelectorAll('.form-block').forEach((block, index) => {
             const typeSelect = block.querySelector('.formTypeSelect');
             const type = typeSelect.value;
-            const formData = { type, order: index + 1, formNum: block.querySelector('h4 span').textContent.replace('Form ', '') };
+            const formEmoji = block.querySelector('h4 span').textContent;
+            const formData = { type, order: index + 1, formIdentifier: formEmoji };
             
             if (type === 'default') {
-                formData.tileNum = block.querySelector('.defaultTileNum')?.value || '';
-                formData.fileName = block.querySelector('.defaultFileName')?.value || '';
+                const versions = [];
+                block.querySelectorAll('.defaultFileName').forEach((input, i) => {
+                    const tileNum = block.querySelectorAll('.defaultTileNum')[i]?.value || '';
+                    versions.push({ fileName: input.value, tileNum });
+                });
+                formData.versions = versions;
             } else if (type === 'singleNest') {
-                formData.nestQty = block.querySelector('.singleNestQty')?.value || '';
-                formData.fileName = block.querySelector('.singleFileName')?.value || '';
+                const versions = [];
+                block.querySelectorAll('.singleFileName').forEach((input, i) => {
+                    const nestQty = block.querySelectorAll('.singleNestQty')[i]?.value || '';
+                    versions.push({ fileName: input.value, nestQty });
+                });
+                formData.versions = versions;
             } else if (type === 'multiNest') {
-                const multiForms = [];
+                const versions = [];
                 block.querySelectorAll('.multiFileName').forEach((input, i) => {
                     const nestAmount = block.querySelectorAll('.multiNestAmount')[i]?.value || '';
-                    multiForms.push({ fileName: input.value, nestAmount });
+                    versions.push({ fileName: input.value, nestAmount });
                 });
-                formData.forms = multiForms;
+                formData.versions = versions;
             } else if (type === 'spectacular') {
-                formData.fileName = block.querySelector('.specFileName')?.value || '';
-                const tiles = [];
-                block.querySelectorAll('.specTileCount').forEach(input => tiles.push(input.value));
-                formData.tilesPerRow = tiles;
+                const versions = [];
+                block.querySelectorAll('.specFileName').forEach((input, versionIdx) => {
+                    const tiles = [];
+                    const tileInputs = block.querySelectorAll(`.specTileCount[data-version="${versionIdx + 1}"]`);
+                    tileInputs.forEach(t => tiles.push(t.value));
+                    versions.push({ fileName: input.value, tilesPerRow: tiles });
+                });
+                formData.versions = versions;
             }
             forms.push(formData);
         });
