@@ -127,7 +127,6 @@
                 `;
             } else if (type === 'multiNest') {
                 html = `
-                    <label>Amount in Nest:</label> <input type="text" class="multiNestAmount" placeholder="e.g., 5"><br>
                     <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
                     <div class="multiFormContainer"></div>
                 `;
@@ -139,7 +138,8 @@
                         let fieldsHtml = '';
                         for (let i = 1; i <= qty; i++) {
                             fieldsHtml += `<label>Form #${i}:</label> <input type="text" class="multiFormNum" data-index="${i}"><br>`;
-                            fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br><br>`;
+                            fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br>`;
+                            fieldsHtml += `<label>Amount in Nest #${i}:</label> <input type="text" class="multiNestAmount" data-index="${i}" placeholder="e.g., 5"><br><br>`;
                         }
                         container.innerHTML = fieldsHtml;
                     }
@@ -232,12 +232,12 @@
                 formData.nestQty = block.querySelector('.singleNestQty')?.value || '';
                 formData.fileName = block.querySelector('.singleFileName')?.value || '';
             } else if (type === 'multiNest') {
-                formData.nestAmount = block.querySelector('.multiNestAmount')?.value || '';
                 const multiForms = [];
                 block.querySelectorAll('.multiFormNum').forEach(input => {
                     const idx = input.dataset.index;
                     const fileName = block.querySelector(`.multiFileName[data-index="${idx}"]`)?.value || '';
-                    multiForms.push({ formNum: input.value, fileName });
+                    const nestAmount = block.querySelector(`.multiNestAmount[data-index="${idx}"]`)?.value || '';
+                    multiForms.push({ formNum: input.value, fileName, nestAmount });
                 });
                 formData.forms = multiForms;
             } else if (type === 'spectacular') {
