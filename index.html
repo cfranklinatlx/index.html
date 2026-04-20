@@ -3,11 +3,34 @@
 <head>
     <title>RIP List Form</title>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }
+        body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; box-sizing: border-box; }
         button { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; margin-right: 10px; }
+        
+        /* Layout: left drop zone + main content */
+        .app-container { display: flex; gap: 20px; }
+        .batch-drop-zone {
+            width: 120px;
+            border: 3px dashed #007bff;
+            border-radius: 12px;
+            background: #f0f7ff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            align-self: flex-start;
+            margin-top: 20px;
+        }
+        .batch-drop-zone.drag-over { background: #d0e4ff; border-color: #0056b3; }
+        .batch-drop-zone p { margin: 10px 0; font-weight: bold; color: #007bff; }
+        .main-content { flex: 1; }
+        
         .form-block { 
             border: 2px solid #ccc; 
             padding: 15px; 
@@ -33,13 +56,32 @@
             z-index: 10;
         }
 
+        /* Modal styles */
+        #typeSelectorModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 350px;
+            width: 90%;
+            text-align: center;
+        }
+        .modal-content h3 { margin-top: 0; }
+        .modal-content select { margin: 20px 0; padding: 10px; }
+        .modal-content button { margin: 5px; }
+
         /* Submission overlay styles */
         #submissionOverlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(255, 255, 255, 0.95);
             display: none;
             justify-content: center;
@@ -51,12 +93,11 @@
             padding: 40px;
             background: white;
             border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
             text-align: center;
         }
         .spinner {
-            width: 50px;
-            height: 50px;
+            width: 50px; height: 50px;
             border: 5px solid #f3f3f3;
             border-top: 5px solid #007bff;
             border-radius: 50%;
@@ -87,52 +128,80 @@
 
 <h2>RIP List Form</h2>
 
-<!-- Static fields -->
-<div class="form-group">
-    <label>Ripped by:</label>
-    <input type="text" id="rippedBy">
+<div class="app-container">
+    <!-- Left batch drop zone -->
+    <div id="batchDropZone" class="batch-drop-zone">
+        <p>📁</p>
+        <p>Drop PDFs here</p>
+        <p style="font-size: 12px; color: #666;">Create multiple forms</p>
+    </div>
+
+    <div class="main-content">
+        <!-- Static fields -->
+        <div class="form-group">
+            <label>Ripped by:</label>
+            <input type="text" id="rippedBy">
+        </div>
+        <div class="form-group">
+            <label>Printer:</label>
+            <select id="printer">
+                <option value="5R1">5R1</option>
+                <option value="5R2">5R2</option>
+                <option value="5R3">5R3</option>
+                <option value="5R4">5R4</option>
+                <option value="FabriVu">FabriVu</option>
+                <option value="Kudu 1">Kudu 1</option>
+                <option value="Kudu 2">Kudu 2</option>
+                <option value="Kudu 3">Kudu 3</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Color Match:</label>
+            <select id="colorMatch">
+                <option value="Laser">Laser</option>
+                <option value="Mini">Mini</option>
+                <option value="Pleasing">Pleasing</option>
+            </select>
+        </div>
+
+        <!-- PDF File Upload -->
+        <div class="form-group">
+            <label>Upload Job Ticket PDF:</label>
+            <input type="file" id="jobTicketPdf" accept=".pdf,application/pdf" required>
+        </div>
+
+        <hr>
+
+        <!-- Container where form blocks will be added -->
+        <div id="formsContainer"></div>
+
+        <!-- "Add Form" button -->
+        <div class="button-group">
+            <button id="addAnotherFormBtn">➕ Add Empty Form</button>
+        </div>
+
+        <hr>
+
+        <button id="submitBtn">Submit to n8n</button>
+    </div>
 </div>
-<div class="form-group">
-    <label>Printer:</label>
-    <select id="printer">
-        <option value="5R1">5R1</option>
-        <option value="5R2">5R2</option>
-        <option value="5R3">5R3</option>
-        <option value="5R4">5R4</option>
-        <option value="FabriVu">FabriVu</option>
-        <option value="Kudu 1">Kudu 1</option>
-        <option value="Kudu 2">Kudu 2</option>
-        <option value="Kudu 3">Kudu 3</option>
-    </select>
+
+<!-- Type Selector Modal -->
+<div id="typeSelectorModal">
+    <div class="modal-content">
+        <h3>Select Form Type</h3>
+        <p>Choose the type for <span id="fileCount">0</span> new form(s):</p>
+        <select id="batchTypeSelect">
+            <option value="default" selected>Default</option>
+            <option value="singleNest">Single-File Nest</option>
+            <option value="multiNest">Multi-File Nest</option>
+            <option value="spectacular">Spectacular</option>
+        </select>
+        <br>
+        <button id="confirmBatchType">Create Forms</button>
+        <button id="cancelBatchType" style="background: #6c757d;">Cancel</button>
+    </div>
 </div>
-<div class="form-group">
-    <label>Color Match:</label>
-    <select id="colorMatch">
-        <option value="Laser">Laser</option>
-        <option value="Mini">Mini</option>
-        <option value="Pleasing">Pleasing</option>
-    </select>
-</div>
-
-<!-- PDF File Upload -->
-<div class="form-group">
-    <label>Upload Job Ticket PDF:</label>
-    <input type="file" id="jobTicketPdf" accept=".pdf,application/pdf" required>
-</div>
-
-<hr>
-
-<!-- Container where form blocks will be added -->
-<div id="formsContainer"></div>
-
-<!-- "Add Form" button at the bottom -->
-<div class="button-group">
-    <button id="addAnotherFormBtn">➕ Add Another Form</button>
-</div>
-
-<hr>
-
-<button id="submitBtn">Submit to n8n</button>
 
 <!-- Submission Overlay -->
 <div id="submissionOverlay">
@@ -150,49 +219,50 @@
     // ========== CONFIGURATION ==========
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
     
-    // Set default Ripped By based on time (6am-6pm = GH, else JD)
+    // Set default Ripped By
     const currentHour = new Date().getHours();
-    const defaultRippedBy = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
-    document.getElementById('rippedBy').value = defaultRippedBy;
+    document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     
-    // ========== HELPER: Clean filename (remove .pdf) ==========
+    // ========== GLOBAL STATE ==========
+    const formsContainer = document.getElementById('formsContainer');
+    let formCounter = 0;
+    let pendingBatchFiles = [];
+    
+    // Modal elements
+    const modal = document.getElementById('typeSelectorModal');
+    const fileCountSpan = document.getElementById('fileCount');
+    const batchTypeSelect = document.getElementById('batchTypeSelect');
+    
+    // ========== HELPER: Clean filename ==========
     function cleanFileName(fileName) {
         return fileName.replace(/\.pdf$/i, '');
     }
     
-    // ========== DRAG & DROP: Global listeners ==========
-    document.body.addEventListener('dragover', (e) => e.preventDefault());
-    document.body.addEventListener('drop', (e) => e.preventDefault());
-    
-    // ========== DYNAMIC FORM BLOCK MANAGEMENT ==========
-    const formsContainer = document.getElementById('formsContainer');
-    let formCounter = 0;
-    
-    // Function to populate a form block with file names
+    // ========== POPULATE FORM BLOCK (supports multiple files) ==========
     function populateFormBlock(block, files, replaceAll = true) {
         const typeSelect = block.querySelector('.formTypeSelect');
         const type = typeSelect.value;
         const fileNames = files.map(f => cleanFileName(f.name));
         
         if (type === 'default') {
+            // For default: first file goes to File Name, additional files create new rows? 
+            // We'll treat it like singleNest: just set the first file name (can be extended)
             const fileNameInput = block.querySelector('.defaultFileName');
             if (fileNameInput) {
-                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+                fileNameInput.value = fileNames.join(', ');
             }
         } else if (type === 'singleNest') {
             const fileNameInput = block.querySelector('.singleFileName');
             if (fileNameInput) {
-                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+                fileNameInput.value = fileNames.join(', ');
             }
         } else if (type === 'multiNest') {
-            // For multiNest, each file gets its own row
             const container = block.querySelector('.multiFormContainer');
             const qtyInput = block.querySelector('.multiFormQty');
             if (container && qtyInput) {
                 const newQty = replaceAll ? files.length : parseInt(qtyInput.value) + files.length;
                 qtyInput.value = newQty;
                 qtyInput.dispatchEvent(new Event('input'));
-                // Wait for DOM update
                 setTimeout(() => {
                     const fileNameInputs = block.querySelectorAll('.multiFileName');
                     const startIdx = replaceAll ? 0 : fileNameInputs.length - files.length;
@@ -207,12 +277,13 @@
         } else if (type === 'spectacular') {
             const fileNameInput = block.querySelector('.specFileName');
             if (fileNameInput) {
-                fileNameInput.value = replaceAll ? fileNames[0] || '' : (fileNameInput.value ? fileNameInput.value + ', ' + fileNames.join(', ') : fileNames.join(', '));
+                fileNameInput.value = fileNames.join(', ');
             }
         }
     }
     
-    function createFormBlock() {
+    // ========== CREATE FORM BLOCK ==========
+    function createFormBlock(formType = 'default') {
         formCounter++;
         const blockId = `formBlock_${formCounter}`;
         const blockDiv = document.createElement('div');
@@ -224,18 +295,14 @@
         const leftDropZone = document.createElement('div');
         leftDropZone.className = 'drop-zone-left';
         leftDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
         });
         leftDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
             if (files.length === 0) return;
-            
-            // Create a new form block for EACH file
             files.forEach(file => {
-                const newBlock = createFormBlock();
+                const newBlock = createFormBlock('default');
                 populateFormBlock(newBlock, [file], true);
             });
         });
@@ -243,21 +310,15 @@
         
         // Drag over / drop on the block itself
         blockDiv.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             blockDiv.classList.add('drag-over');
         });
-        blockDiv.addEventListener('dragleave', () => {
-            blockDiv.classList.remove('drag-over');
-        });
+        blockDiv.addEventListener('dragleave', () => blockDiv.classList.remove('drag-over'));
         blockDiv.addEventListener('drop', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e.preventDefault(); e.stopPropagation();
             blockDiv.classList.remove('drag-over');
-            
             const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
             if (files.length === 0) return;
-            
             populateFormBlock(blockDiv, files, true);
         });
         
@@ -270,10 +331,10 @@
                 <label>Form Type:</label>
                 <select class="formTypeSelect" data-block-id="${blockId}">
                     <option value="">-- Select --</option>
-                    <option value="default" selected>Default</option>
-                    <option value="singleNest">Single-File Nest</option>
-                    <option value="multiNest">Multi-File Nest</option>
-                    <option value="spectacular">Spectacular</option>
+                    <option value="default" ${formType === 'default' ? 'selected' : ''}>Default</option>
+                    <option value="singleNest" ${formType === 'singleNest' ? 'selected' : ''}>Single-File Nest</option>
+                    <option value="multiNest" ${formType === 'multiNest' ? 'selected' : ''}>Multi-File Nest</option>
+                    <option value="spectacular" ${formType === 'spectacular' ? 'selected' : ''}>Spectacular</option>
                 </select>
             </div>
             <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
@@ -325,7 +386,6 @@
                 setTimeout(() => {
                     const container = blockDiv.querySelector('.specRowContainer');
                     const rowCountInput = blockDiv.querySelector('.specRowCount');
-                    
                     function updateSpecRows() {
                         const rows = parseInt(rowCountInput.value) || 1;
                         let rowsHtml = '';
@@ -335,18 +395,14 @@
                             rowsHtml += `</div>`;
                         }
                         container.innerHTML = rowsHtml;
-                        
                         const tileInputs = container.querySelectorAll('.specTileCount');
                         if (tileInputs.length > 0) {
                             tileInputs[0].addEventListener('input', function(e) {
                                 const firstVal = e.target.value;
-                                for (let j = 1; j < tileInputs.length; j++) {
-                                    tileInputs[j].value = firstVal;
-                                }
+                                for (let j = 1; j < tileInputs.length; j++) tileInputs[j].value = firstVal;
                             });
                         }
                     }
-                    
                     rowCountInput.addEventListener('input', updateSpecRows);
                     updateSpecRows();
                 }, 10);
@@ -354,20 +410,58 @@
             fieldsArea.innerHTML = html;
         }
         
-        generateFields('default');
+        generateFields(formType);
         typeSelect.addEventListener('change', (e) => generateFields(e.target.value));
         return blockDiv;
     }
     
     window.removeFormBlock = function(blockId) {
-        const block = document.getElementById(blockId);
-        if (block) block.remove();
+        document.getElementById(blockId)?.remove();
     };
     
-    createFormBlock();
-    document.getElementById('addAnotherFormBtn').addEventListener('click', createFormBlock);
+    // Initialize with one default form
+    createFormBlock('default');
+    document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
     
-    // ========== SUBMIT LOGIC WITH OVERLAY (unchanged) ==========
+    // ========== BATCH DROP ZONE ==========
+    const batchZone = document.getElementById('batchDropZone');
+    batchZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        batchZone.classList.add('drag-over');
+    });
+    batchZone.addEventListener('dragleave', () => batchZone.classList.remove('drag-over'));
+    batchZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        batchZone.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+        if (files.length === 0) return;
+        
+        pendingBatchFiles = files;
+        fileCountSpan.textContent = files.length;
+        modal.style.display = 'flex';
+    });
+    
+    document.getElementById('confirmBatchType').addEventListener('click', () => {
+        const selectedType = batchTypeSelect.value;
+        pendingBatchFiles.forEach(file => {
+            const newBlock = createFormBlock(selectedType);
+            populateFormBlock(newBlock, [file], true);
+        });
+        modal.style.display = 'none';
+        pendingBatchFiles = [];
+    });
+    
+    document.getElementById('cancelBatchType').addEventListener('click', () => {
+        modal.style.display = 'none';
+        pendingBatchFiles = [];
+    });
+    
+    // Close modal on outside click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.style.display = 'none';
+    });
+    
+    // ========== SUBMIT LOGIC (unchanged) ==========
     const overlay = document.getElementById('submissionOverlay');
     const overlayTitle = document.getElementById('overlayTitle');
     const summaryContent = document.getElementById('summaryContent');
@@ -388,9 +482,7 @@
         }
         
         const forms = [];
-        const formBlocks = document.querySelectorAll('.form-block');
-        
-        formBlocks.forEach((block, index) => {
+        document.querySelectorAll('.form-block').forEach((block, index) => {
             const typeSelect = block.querySelector('.formTypeSelect');
             const type = typeSelect.value;
             const formData = { type, order: index + 1, formNum: block.querySelector('h4 span').textContent.replace('Form ', '') };
@@ -414,20 +506,17 @@
                 block.querySelectorAll('.specTileCount').forEach(input => tiles.push(input.value));
                 formData.tilesPerRow = tiles;
             }
-            
             forms.push(formData);
         });
         
-        let summaryHtml = `
+        overlayTitle.textContent = 'Processing Your RIP List';
+        summaryContent.innerHTML = `
             <div class="summary-item"><strong>Ripped by:</strong> ${rippedBy}</div>
             <div class="summary-item"><strong>Printer:</strong> ${printer}</div>
             <div class="summary-item"><strong>Color Match:</strong> ${colorMatch}</div>
             <div class="summary-item"><strong>File:</strong> ${fileInput.files[0].name}</div>
             <div class="summary-item"><strong>Forms:</strong> ${forms.length}</div>
         `;
-        
-        overlayTitle.textContent = 'Processing Your RIP List';
-        summaryContent.innerHTML = summaryHtml;
         spinner.style.display = 'block';
         statusMessage.textContent = 'Waiting for RIP List...';
         downloadContainer.innerHTML = '';
@@ -442,46 +531,31 @@
         formDataPayload.append('jobTicketPdf', fileInput.files[0]);
         
         try {
-            const response = await fetch(n8nWebhookUrl, {
-                method: 'POST',
-                body: formDataPayload
-            });
-            
+            const response = await fetch(n8nWebhookUrl, { method: 'POST', body: formDataPayload });
             if (response.ok) {
                 const data = await response.json();
                 spinner.style.display = 'none';
                 statusMessage.textContent = 'RIP List Ready!';
-                
                 let url = data.url;
                 if (!url && Array.isArray(data) && data[0]) url = data[0].url;
-                
                 if (url) {
-                    downloadContainer.innerHTML = `
-                        <a href="${url}" target="_blank" class="download-link">📥 Download RIP List</a>
-                        <p style="margin-top: 10px; font-size: 12px; color: #666;">Link expires in 1 hour</p>
-                    `;
+                    downloadContainer.innerHTML = `<a href="${url}" target="_blank" class="download-link">📥 Download RIP List</a><p style="margin-top: 10px; font-size: 12px; color: #666;">Link expires in 1 hour</p>`;
                 } else {
                     downloadContainer.innerHTML = `<p>RIP List generated, but no URL returned.</p>`;
                 }
-            } else {
-                throw new Error(`Server returned ${response.status}`);
-            }
+            } else throw new Error(`Server returned ${response.status}`);
         } catch (error) {
             console.error('Error:', error);
             spinner.style.display = 'none';
             overlayTitle.textContent = 'Submission Failed';
             statusMessage.textContent = '';
-            errorContainer.innerHTML = `
-                <p>There was an error processing your request.</p>
-                <p style="font-size: 12px;">${error.message}</p>
-                <button onclick="document.getElementById('submissionOverlay').style.display='none'">Close</button>
-            `;
+            errorContainer.innerHTML = `<p>There was an error processing your request.</p><p style="font-size: 12px;">${error.message}</p><button onclick="document.getElementById('submissionOverlay').style.display='none'">Close</button>`;
         }
     });
     
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.style.display = 'none';
-    });
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
+    document.body.addEventListener('dragover', (e) => e.preventDefault());
+    document.body.addEventListener('drop', (e) => e.preventDefault());
 </script>
 </body>
 </html>
