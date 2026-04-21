@@ -129,7 +129,6 @@
 <h2>RIP List Form</h2>
 
 <div class="app-container">
-    <!-- Left batch drop zone (UNTOUCHED) -->
     <div id="batchDropZone" class="batch-drop-zone">
         <p>📁</p>
         <p>Drop PDFs here</p>
@@ -137,7 +136,6 @@
     </div>
 
     <div class="main-content">
-        <!-- Static fields -->
         <div class="form-group">
             <label>Ripped by:</label>
             <input type="text" id="rippedBy">
@@ -183,16 +181,13 @@
     </div>
 </div>
 
-<!-- Type Selector Modal -->
 <div id="typeSelectorModal">
     <div class="modal-content">
         <h3>Select Form Type</h3>
         <p>Choose the type for <span id="fileCount">0</span> new form(s):</p>
         <select id="batchTypeSelect">
             <option value="default" selected>Default</option>
-            <option value="singleNest">Single-File Nest</option>
-            <option value="multiNest">Multi-File Nest</option>
-            <option value="spectacular">Spectacular</option>
+            <option value="spectacular">Vinyl Spectacular</option>
         </select>
         <br>
         <button id="confirmBatchType">Create Forms</button>
@@ -200,7 +195,6 @@
     </div>
 </div>
 
-<!-- Submission Overlay -->
 <div id="submissionOverlay">
     <div class="submission-card">
         <h3 id="overlayTitle">Processing Your RIP List</h3>
@@ -213,13 +207,11 @@
 </div>
 
 <script>
-    // ========== CONFIGURATION ==========
-    const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook-test/106d0183-5d4a-4655-abe7-5aa10c4fad59';
+    const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
     
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     
-    // Animal emojis for form labels
     const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
     const usedEmojis = new Set();
     
@@ -238,7 +230,6 @@
         usedEmojis.delete(emoji);
     }
     
-    // ========== GLOBAL STATE ==========
     const formsContainer = document.getElementById('formsContainer');
     let pendingBatchFiles = [];
     
@@ -250,7 +241,6 @@
         return fileName.replace(/\.pdf$/i, '');
     }
     
-    // ========== CREATE FORM BLOCK ==========
     function createFormBlock(formType = 'default') {
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const blockDiv = document.createElement('div');
@@ -260,7 +250,6 @@
         const formEmoji = getRandomEmoji();
         blockDiv.setAttribute('data-emoji', formEmoji);
         
-        // Left drop zone (creates new forms - UNTOUCHED)
         const leftDropZone = document.createElement('div');
         leftDropZone.className = 'drop-zone-left';
         leftDropZone.addEventListener('dragover', (e) => {
@@ -277,7 +266,6 @@
         });
         blockDiv.appendChild(leftDropZone);
         
-        // Drag over / drop on the block itself
         blockDiv.addEventListener('dragover', (e) => {
             e.preventDefault(); e.stopPropagation();
             blockDiv.classList.add('drag-over');
@@ -301,9 +289,7 @@
                 <select class="formTypeSelect" data-block-id="${blockId}">
                     <option value="">-- Select --</option>
                     <option value="default" ${formType === 'default' ? 'selected' : ''}>Default</option>
-                    <option value="singleNest" ${formType === 'singleNest' ? 'selected' : ''}>Single-File Nest</option>
-                    <option value="multiNest" ${formType === 'multiNest' ? 'selected' : ''}>Multi-File Nest</option>
-                    <option value="spectacular" ${formType === 'spectacular' ? 'selected' : ''}>Spectacular</option>
+                    <option value="spectacular" ${formType === 'spectacular' ? 'selected' : ''}>Vinyl Spectacular</option>
                 </select>
             </div>
             <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
@@ -321,16 +307,6 @@
                     <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
                     <div class="versionContainer"></div>
                 `;
-            } else if (type === 'singleNest') {
-                html = `
-                    <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
-                    <div class="versionContainer"></div>
-                `;
-            } else if (type === 'multiNest') {
-                html = `
-                    <label>Form Quantity:</label> <input type="number" class="multiFormQty" min="1" value="1"><br><br>
-                    <div class="multiFormContainer"></div>
-                `;
             } else if (type === 'spectacular') {
                 html = `
                     <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
@@ -339,23 +315,7 @@
             }
             fieldsArea.innerHTML = html;
             
-            if (type === 'multiNest') {
-                const container = blockDiv.querySelector('.multiFormContainer');
-                const qtyInput = blockDiv.querySelector('.multiFormQty');
-                function updateMultiFields() {
-                    const qty = parseInt(qtyInput.value) || 1;
-                    let fieldsHtml = '';
-                    for (let i = 1; i <= qty; i++) {
-                        fieldsHtml += `<div class="version-row">`;
-                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="multiFileName" data-index="${i}"><br>`;
-                        fieldsHtml += `<label>Amount in Nest #${i}:</label> <input type="text" class="multiNestAmount" data-index="${i}" placeholder="e.g., 5"><br>`;
-                        fieldsHtml += `</div>`;
-                    }
-                    container.innerHTML = fieldsHtml;
-                }
-                qtyInput.addEventListener('input', updateMultiFields);
-                updateMultiFields();
-            } else if (type === 'default') {
+            if (type === 'default') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
                 function updateVersionFields() {
@@ -371,25 +331,10 @@
                 }
                 qtyInput.addEventListener('input', updateVersionFields);
                 updateVersionFields();
-            } else if (type === 'singleNest') {
-                const container = blockDiv.querySelector('.versionContainer');
-                const qtyInput = blockDiv.querySelector('.versionQty');
-                function updateVersionFields() {
-                    const qty = parseInt(qtyInput.value) || 1;
-                    let fieldsHtml = '';
-                    for (let i = 1; i <= qty; i++) {
-                        fieldsHtml += `<div class="version-row">`;
-                        fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="singleFileName" data-index="${i}"><br>`;
-                        fieldsHtml += `<label>Nest Qty #${i}:</label> <input type="text" class="singleNestQty" data-index="${i}"><br>`;
-                        fieldsHtml += `</div>`;
-                    }
-                    container.innerHTML = fieldsHtml;
-                }
-                qtyInput.addEventListener('input', updateVersionFields);
-                updateVersionFields();
             } else if (type === 'spectacular') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
+                
                 function updateVersionFields() {
                     const qty = parseInt(qtyInput.value) || 1;
                     let fieldsHtml = '';
@@ -402,9 +347,11 @@
                     }
                     container.innerHTML = fieldsHtml;
                     
+                    // Set up each version's row container
                     for (let i = 1; i <= qty; i++) {
                         const rowContainer = container.querySelector(`.specRowContainer_${i}`);
                         const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
+                        
                         function updateSpecRows() {
                             const rows = parseInt(rowCountInput.value) || 1;
                             let rowsHtml = '';
@@ -414,11 +361,24 @@
                                 rowsHtml += `</div>`;
                             }
                             rowContainer.innerHTML = rowsHtml;
+                            
+                            // Auto-fill: when first row changes, copy to all other rows in THIS version
+                            const tileInputs = rowContainer.querySelectorAll('.specTileCount');
+                            if (tileInputs.length > 0) {
+                                tileInputs[0].addEventListener('input', function(e) {
+                                    const firstVal = e.target.value;
+                                    for (let j = 1; j < tileInputs.length; j++) {
+                                        tileInputs[j].value = firstVal;
+                                    }
+                                });
+                            }
                         }
+                        
                         rowCountInput.addEventListener('input', updateSpecRows);
                         updateSpecRows();
                     }
                 }
+                
                 qtyInput.addEventListener('input', updateVersionFields);
                 updateVersionFields();
             }
@@ -434,40 +394,23 @@
         const type = typeSelect.value;
         const fileNames = files.map(f => cleanFileName(f.name));
         
-        if (type === 'multiNest') {
-            const qtyInput = block.querySelector('.multiFormQty');
-            if (qtyInput) {
-                qtyInput.value = files.length;
-                qtyInput.dispatchEvent(new Event('input'));
-                setTimeout(() => {
-                    const fileNameInputs = block.querySelectorAll('.multiFileName');
+        const qtyInput = block.querySelector('.versionQty');
+        if (qtyInput) {
+            qtyInput.value = files.length;
+            qtyInput.dispatchEvent(new Event('input'));
+            setTimeout(() => {
+                let fileNameInputs;
+                if (type === 'default') fileNameInputs = block.querySelectorAll('.defaultFileName');
+                else if (type === 'spectacular') fileNameInputs = block.querySelectorAll('.specFileName');
+                
+                if (fileNameInputs) {
                     files.forEach((file, i) => {
                         if (fileNameInputs[i]) {
                             fileNameInputs[i].value = cleanFileName(file.name);
                         }
                     });
-                }, 50);
-            }
-        } else {
-            const qtyInput = block.querySelector('.versionQty');
-            if (qtyInput) {
-                qtyInput.value = files.length;
-                qtyInput.dispatchEvent(new Event('input'));
-                setTimeout(() => {
-                    let fileNameInputs;
-                    if (type === 'default') fileNameInputs = block.querySelectorAll('.defaultFileName');
-                    else if (type === 'singleNest') fileNameInputs = block.querySelectorAll('.singleFileName');
-                    else if (type === 'spectacular') fileNameInputs = block.querySelectorAll('.specFileName');
-                    
-                    if (fileNameInputs) {
-                        files.forEach((file, i) => {
-                            if (fileNameInputs[i]) {
-                                fileNameInputs[i].value = cleanFileName(file.name);
-                            }
-                        });
-                    }
-                }, 50);
-            }
+                }
+            }, 50);
         }
     }
     
@@ -479,11 +422,9 @@
         }
     };
     
-    // Initialize with one default form
     createFormBlock('default');
     document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
     
-    // ========== BATCH DROP ZONE (UNTOUCHED) ==========
     const batchZone = document.getElementById('batchDropZone');
     batchZone.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -520,7 +461,6 @@
         if (e.target === modal) modal.style.display = 'none';
     });
     
-    // ========== SUBMIT LOGIC (UPDATED FOR NEW STRUCTURE) ==========
     const overlay = document.getElementById('submissionOverlay');
     const overlayTitle = document.getElementById('overlayTitle');
     const summaryContent = document.getElementById('summaryContent');
@@ -552,20 +492,6 @@
                 block.querySelectorAll('.defaultFileName').forEach((input, i) => {
                     const tileNum = block.querySelectorAll('.defaultTileNum')[i]?.value || '';
                     versions.push({ fileName: input.value, tileNum });
-                });
-                formData.versions = versions;
-            } else if (type === 'singleNest') {
-                const versions = [];
-                block.querySelectorAll('.singleFileName').forEach((input, i) => {
-                    const nestQty = block.querySelectorAll('.singleNestQty')[i]?.value || '';
-                    versions.push({ fileName: input.value, nestQty });
-                });
-                formData.versions = versions;
-            } else if (type === 'multiNest') {
-                const versions = [];
-                block.querySelectorAll('.multiFileName').forEach((input, i) => {
-                    const nestAmount = block.querySelectorAll('.multiNestAmount')[i]?.value || '';
-                    versions.push({ fileName: input.value, nestAmount });
                 });
                 formData.versions = versions;
             } else if (type === 'spectacular') {
