@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RIP List Form</title>
+    <title>RIP List Generator</title>
     <style>
         body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; }
         .form-group { margin-bottom: 15px; }
@@ -79,7 +79,37 @@
         .modal-content select { margin: 20px 0; padding: 10px; }
         .modal-content button { margin: 5px; }
 
-        #submissionOverlay {
+        #savesModal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .saves-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .saves-list { list-style: none; padding: 0; }
+        .saves-list li { 
+            padding: 10px; 
+            border-bottom: 1px solid #eee; 
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .saves-list li:hover { background: #f5f5f5; }
+        .delete-save { color: #dc3545; cursor: pointer; padding: 5px; }
+
+        #processingOverlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(255, 255, 255, 0.95);
@@ -88,7 +118,7 @@
             align-items: center;
             z-index: 1000;
         }
-        .submission-card {
+        .processing-card {
             max-width: 500px;
             padding: 40px;
             background: white;
@@ -108,25 +138,62 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .summary { text-align: left; margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 8px; }
-        .summary-item { margin: 8px 0; }
-        .download-link {
-            display: inline-block;
-            margin-top: 20px;
-            padding: 12px 24px;
-            background: #28a745;
-            color: white;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
+
+        /* RIP List Preview Styles */
+        #ripListPreview {
+            margin-top: 30px;
+            border: 1px solid #ccc;
+            padding: 20px;
+            background: white;
         }
-        .download-link:hover { background: #218838; }
-        .error-message { color: #dc3545; margin-top: 15px; }
+        .rip-list-page {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            margin-bottom: 30px;
+            page-break-after: always;
+        }
+        .rip-list-header {
+            display: flex;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+        }
+        .rip-list-field {
+            margin-right: 30px;
+            margin-bottom: 5px;
+        }
+        .rip-list-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 10px 0;
+        }
+        .rip-list-table-container {
+            display: flex;
+            gap: 20px;
+        }
+        .rip-list-table {
+            flex: 1;
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .rip-list-table td, .rip-list-table th {
+            border: 1px solid #000;
+            padding: 2px 5px;
+            font-size: 10px;
+        }
+        .rip-list-footer {
+            margin-top: 20px;
+            border-top: 1px solid #000;
+            padding-top: 10px;
+        }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
-<h2>RIP List Form</h2>
+<h2>RIP List Generator</h2>
 
 <div class="app-container">
     <div id="batchDropZone" class="batch-drop-zone">
@@ -173,11 +240,12 @@
 
         <div class="button-group">
             <button id="addAnotherFormBtn">➕ Add Empty Form</button>
+            <button id="savesBtn" style="background: #6c757d;">📂 Saves</button>
         </div>
 
         <hr>
 
-        <button id="submitBtn">Submit to n8n</button>
+        <button id="generateBtn">🚀 Generate RIP List</button>
     </div>
 </div>
 
@@ -195,23 +263,33 @@
     </div>
 </div>
 
-<div id="submissionOverlay">
-    <div class="submission-card">
-        <h3 id="overlayTitle">Processing Your RIP List</h3>
-        <div id="summaryContent" class="summary"></div>
-        <div id="spinner" class="spinner"></div>
-        <p id="statusMessage">Waiting for RIP List...</p>
-        <div id="downloadContainer"></div>
-        <div id="errorContainer" class="error-message"></div>
+<div id="savesModal">
+    <div class="saves-modal-content">
+        <h3>Saved RIP Lists</h3>
+        <ul class="saves-list" id="savesList"></ul>
+        <button id="closeSavesModal" style="margin-top: 20px;">Close</button>
     </div>
 </div>
 
+<div id="processingOverlay">
+    <div class="processing-card">
+        <h3 id="processingTitle">Processing RIP List</h3>
+        <div id="processingMessage"></div>
+        <div id="spinner" class="spinner"></div>
+    </div>
+</div>
+
+<div id="ripListPreview"></div>
+
 <script>
-    const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
-    
+    // ========== CONFIGURATION ==========
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     
+    // Initialize PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    // Animal emojis for form labels
     const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
     const usedEmojis = new Set();
     
@@ -232,15 +310,39 @@
     
     const formsContainer = document.getElementById('formsContainer');
     let pendingBatchFiles = [];
+    let extractedPdfText = '';
+    let currentRipListData = null;
     
     const modal = document.getElementById('typeSelectorModal');
     const fileCountSpan = document.getElementById('fileCount');
     const batchTypeSelect = document.getElementById('batchTypeSelect');
+    const savesModal = document.getElementById('savesModal');
+    const savesList = document.getElementById('savesList');
+    const processingOverlay = document.getElementById('processingOverlay');
+    const processingTitle = document.getElementById('processingTitle');
+    const processingMessage = document.getElementById('processingMessage');
     
     function cleanFileName(fileName) {
         return fileName.replace(/\.pdf$/i, '');
     }
     
+    // ========== PDF TEXT EXTRACTION ==========
+    async function extractPdfText(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map(item => item.str).join(' ');
+            fullText += pageText + '\n';
+        }
+        
+        return fullText;
+    }
+    
+    // ========== CREATE FORM BLOCK ==========
     function createFormBlock(formType = 'default') {
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const blockDiv = document.createElement('div');
@@ -347,7 +449,6 @@
                     }
                     container.innerHTML = fieldsHtml;
                     
-                    // Set up each version's row container
                     for (let i = 1; i <= qty; i++) {
                         const rowContainer = container.querySelector(`.specRowContainer_${i}`);
                         const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
@@ -362,7 +463,6 @@
                             }
                             rowContainer.innerHTML = rowsHtml;
                             
-                            // Auto-fill: when first row changes, copy to all other rows in THIS version
                             const tileInputs = rowContainer.querySelectorAll('.specTileCount');
                             if (tileInputs.length > 0) {
                                 tileInputs[0].addEventListener('input', function(e) {
@@ -425,6 +525,7 @@
     createFormBlock('default');
     document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
     
+    // ========== BATCH DROP ZONE ==========
     const batchZone = document.getElementById('batchDropZone');
     batchZone.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -461,97 +562,444 @@
         if (e.target === modal) modal.style.display = 'none';
     });
     
-    const overlay = document.getElementById('submissionOverlay');
-    const overlayTitle = document.getElementById('overlayTitle');
-    const summaryContent = document.getElementById('summaryContent');
-    const spinner = document.getElementById('spinner');
-    const statusMessage = document.getElementById('statusMessage');
-    const downloadContainer = document.getElementById('downloadContainer');
-    const errorContainer = document.getElementById('errorContainer');
-
-    document.getElementById('submitBtn').addEventListener('click', async () => {
-        const rippedBy = document.getElementById('rippedBy').value;
-        const printer = document.getElementById('printer').value;
-        const colorMatch = document.getElementById('colorMatch').value;
-        const fileInput = document.getElementById('jobTicketPdf');
+    // ========== SAVES FUNCTIONALITY ==========
+    document.getElementById('savesBtn').addEventListener('click', () => {
+        loadSavesList();
+        savesModal.style.display = 'flex';
+    });
+    
+    document.getElementById('closeSavesModal').addEventListener('click', () => {
+        savesModal.style.display = 'none';
+    });
+    
+    savesModal.addEventListener('click', (e) => {
+        if (e.target === savesModal) savesModal.style.display = 'none';
+    });
+    
+    function loadSavesList() {
+        const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
+        savesList.innerHTML = '';
         
+        if (saves.length === 0) {
+            savesList.innerHTML = '<li>No saved RIP lists</li>';
+            return;
+        }
+        
+        saves.reverse().forEach((save, index) => {
+            const li = document.createElement('li');
+            li.innerHTML = `
+                <span>${save.customer} - Job ${save.jobNumber} - ${save.timestamp}</span>
+                <span>
+                    <button onclick="loadSave(${saves.length - 1 - index})">Load</button>
+                    <span class="delete-save" onclick="deleteSave(${saves.length - 1 - index})">🗑️</span>
+                </span>
+            `;
+            savesList.appendChild(li);
+        });
+    }
+    
+    window.loadSave = function(index) {
+        const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
+        const save = saves[index];
+        if (save && save.ripListData) {
+            currentRipListData = save.ripListData;
+            renderRipList(save.ripListData);
+            savesModal.style.display = 'none';
+        }
+    };
+    
+    window.deleteSave = function(index) {
+        const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
+        saves.splice(index, 1);
+        localStorage.setItem('ripListSaves', JSON.stringify(saves));
+        loadSavesList();
+    };
+    
+    function saveRipList(data, customer, jobNumber) {
+        const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
+        saves.push({
+            customer: customer,
+            jobNumber: jobNumber,
+            timestamp: new Date().toLocaleString(),
+            ripListData: data
+        });
+        if (saves.length > 50) saves.shift();
+        localStorage.setItem('ripListSaves', JSON.stringify(saves));
+    }
+    
+    // ========== RIP LIST GENERATION ENGINE ==========
+    function processRipList(pdfText, formData) {
+        // Customer extraction
+        let extractedCustomer = '';
+        const customerMatch1 = pdfText.match(/Customer\s*:?\s*([^\n]+)/i);
+        if (customerMatch1) {
+            const potentialCustomer = customerMatch1[1].trim();
+            if (!potentialCustomer.includes('/') && !potentialCustomer.includes('In-Prep') && potentialCustomer.length > 3) {
+                extractedCustomer = potentialCustomer;
+            }
+        }
+        if (!extractedCustomer) {
+            const capsMatch = pdfText.match(/[A-Z]{3,}(?:\s+[A-Z&]{2,})+/);
+            if (capsMatch) extractedCustomer = capsMatch[0];
+        }
+        
+        // Job number extraction
+        let extractedJobNo = '';
+        const jobNoMatch = pdfText.match(/JobNo\s*(\d{5,6})/);
+        if (jobNoMatch) extractedJobNo = jobNoMatch[1];
+        
+        // Split PDF into form sections
+        const preTrimSplit = pdfText.split('PreTrim');
+        const formSections = [];
+        for (let i = 0; i < preTrimSplit.length - 1; i++) {
+            let section = preTrimSplit[i];
+            if (i === 0) {
+                const dueDateIdx = section.indexOf('DueDate');
+                if (dueDateIdx !== -1) section = section.substring(dueDateIdx);
+            } else {
+                const versionIdx = section.indexOf('Version');
+                if (versionIdx !== -1) section = section.substring(versionIdx);
+            }
+            formSections.push(section);
+        }
+        
+        function extractFormData(pdfSection) {
+            if (!pdfSection) return null;
+            const versionMatch = pdfSection.match(/Version\s*\n?\s*([^\n]+)/);
+            const version = versionMatch ? versionMatch[1].trim() : '';
+            const quantityMatch = pdfSection.match(/(\d+)\s+(?:Flatbed Sheet|Roll\s*\([^)]+\)|Dye\s*Sub)[^\n]*/i);
+            const quantity = quantityMatch ? parseInt(quantityMatch[1]) : 0;
+            const stockMatch = pdfSection.match(/Stock:\s*([^\n]+)/);
+            const material = stockMatch ? stockMatch[1].trim() : '';
+            const sizeMatch = pdfSection.match(/(\d+'\s*X\s*\d+')/);
+            const size = sizeMatch ? sizeMatch[1] : '';
+            const printMatch = pdfSection.match(/((?:Flatbed Sheet|Roll\s*\([^)]+\)|Dye\s*Sub)[^\n]+)/i);
+            const printMode = printMatch ? printMatch[1].trim() : '';
+            const dueMatch = pdfSection.match(/Due:\s*([^\n]+)/);
+            const dueDate = dueMatch ? dueMatch[1].trim() : '';
+            const laminated = /Laminate/i.test(pdfSection);
+            const zundCut = /Zund/i.test(pdfSection);
+            const rollSizeMatch = pdfSection.match(/(\d+)"\s*[xX]\s*\d+\s*['']/);
+            let stockWidth = 196;
+            if (rollSizeMatch) stockWidth = parseInt(rollSizeMatch[1]);
+            return { version, quantity, material, size, printMode, dueDate, laminated, zundCut, stockWidth };
+        }
+        
+        function findFormSectionByVersion(versionCode) {
+            const letterPrefix = versionCode.match(/^([A-Z]+)/)?.[1] || versionCode;
+            for (let i = 0; i < formSections.length; i++) {
+                const section = formSections[i];
+                const versionMatch = section.match(/Version\s*\n?\s*([^\n]+)/);
+                if (versionMatch) {
+                    const sectionVersion = versionMatch[1].trim();
+                    const sectionPrefix = sectionVersion.match(/^([A-Z]+)/)?.[1] || '';
+                    if (sectionPrefix === letterPrefix) return { index: i, section: section };
+                }
+            }
+            return null;
+        }
+        
+        function extractFileQuantity(pdfSection, versionCode) {
+            const filePattern = new RegExp(`\\((\\d+)\\)\\s*${versionCode}\\s*-`, 'i');
+            const fileMatch = pdfSection.match(filePattern);
+            return fileMatch ? parseInt(fileMatch[1]) : 1;
+        }
+        
+        const allVersionsList = [];
+        const allFileNames = [];
+        let firstFormExtracted = null;
+        const rowLabels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
+        
+        formData.forms.forEach((form) => {
+            const fileType = form.type || 'default';
+            const versions = form.versions || [];
+            const isMultiFileForm = versions.length > 1 && versions.every(v => !v.tileNum || v.tileNum === '');
+            
+            versions.forEach((version) => {
+                const fileName = version.fileName || '';
+                const tileNum = version.tileNum || '';
+                const parts = fileName.split('_');
+                const versionCode = parts.length >= 2 ? parts[1] : fileName;
+                if (!versionCode) return;
+                
+                const found = findFormSectionByVersion(versionCode);
+                if (!found) return;
+                
+                const formNum = found.index + 1;
+                const pdfSection = found.section;
+                const extracted = extractFormData(pdfSection);
+                if (!extracted) return;
+                
+                const fileNames = [];
+                const tileCount = tileNum ? parseInt(tileNum) : 1;
+                const quantity = extracted.quantity;
+                const stockWidth = extracted.stockWidth;
+                const isBillboard = stockWidth >= 100;
+                
+                allVersionsList.push(versionCode);
+                if (!firstFormExtracted) {
+                    firstFormExtracted = { ...extracted, formNum, isMultiFileForm };
+                }
+                
+                if (isMultiFileForm) {
+                    const fileQuantity = extractFileQuantity(pdfSection, versionCode);
+                    fileNames.push(`${formNum.toString().padStart(3, '0')}_${fileName}`);
+                    fileNames.push(`${formNum.toString().padStart(3, '0')} x${fileQuantity}`);
+                    fileNames.push('');
+                } else if (fileType === 'spectacular') {
+                    fileNames.push(`${formNum.toString().padStart(3, '0')}_${fileName}`);
+                    const tilesPerRow = version.tilesPerRow || [];
+                    tilesPerRow.forEach((tileCountVal, rowIndex) => {
+                        const count = parseInt(tileCountVal) || 0;
+                        if (count > 0) {
+                            const label = rowLabels[rowIndex] || String.fromCharCode(65 + rowIndex);
+                            if (isBillboard) {
+                                for (let t = 1; t <= count; t++) {
+                                    fileNames.push(`${formNum.toString().padStart(3, '0')}_${label}${t}`);
+                                }
+                            } else {
+                                fileNames.push(`${formNum.toString().padStart(3, '0')}_${label}1-${label}${count}`);
+                            }
+                        }
+                    });
+                    fileNames.push('');
+                } else {
+                    fileNames.push(`${formNum.toString().padStart(3, '0')}_${fileName}`);
+                    if (isBillboard) {
+                        if (tileCount === 1) {
+                            fileNames.push(`x${quantity}`);
+                        } else {
+                            for (let t = 1; t <= tileCount; t++) {
+                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A${t}`);
+                            }
+                        }
+                    } else {
+                        if (quantity > 1) {
+                            if (tileCount === 1) {
+                                fileNames.push(`x${quantity}`);
+                            } else {
+                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount} x${quantity}`);
+                            }
+                        } else {
+                            if (tileCount === 1) {
+                                fileNames.push(`x${quantity}`);
+                            } else {
+                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount}`);
+                            }
+                        }
+                    }
+                    fileNames.push('');
+                }
+                allFileNames.push(...fileNames);
+            });
+        });
+        
+        // Build output object
+        const output = {
+            customer: extractedCustomer,
+            job_number: extractedJobNo,
+            printer: formData.printer || '',
+            ripped_by: formData.rippedBy || '',
+            color_match: formData.colorMatch || '',
+            fileNames: allFileNames,
+            versions: allVersionsList
+        };
+        
+        if (firstFormExtracted) {
+            output.quantity = firstFormExtracted.isMultiFileForm ? '' : (firstFormExtracted.quantity || '');
+            output.material = firstFormExtracted.material || '';
+            output.size = firstFormExtracted.size || '';
+            output.print_mode = firstFormExtracted.printMode || '';
+            output.due_date = firstFormExtracted.dueDate || '';
+            output.laminated = firstFormExtracted.laminated || false;
+            output.zund_cut = firstFormExtracted.zundCut || false;
+        }
+        
+        return output;
+    }
+    
+    // ========== RENDER RIP LIST ==========
+    function renderRipList(data) {
+        const preview = document.getElementById('ripListPreview');
+        const dateTime = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit', hour12: true }).replace(',', '');
+        
+        // Build file name rows
+        const allFileNames = data.fileNames || [];
+        const pages = [];
+        const LINES_PER_PAGE = 48;
+        
+        for (let start = 0; start < allFileNames.length; start += LINES_PER_PAGE) {
+            pages.push(allFileNames.slice(start, start + LINES_PER_PAGE));
+        }
+        
+        let html = '';
+        pages.forEach((pageFiles, pageIdx) => {
+            const leftColumn = [];
+            const rightColumn = [];
+            
+            for (let i = 0; i < LINES_PER_PAGE; i++) {
+                if (i % 2 === 0) {
+                    leftColumn.push(pageFiles[i] || '');
+                } else {
+                    rightColumn.push(pageFiles[i] || '');
+                }
+            }
+            
+            html += `
+                <div class="rip-list-page">
+                    <div style="display: flex; justify-content: space-between;">
+                        <h3 style="margin:0;">Rip List / Print Form</h3>
+                        <span>${dateTime}</span>
+                    </div>
+                    <div class="rip-list-header">
+                        <div class="rip-list-field"><strong>Customer:</strong> ${data.customer || ''}</div>
+                        <div class="rip-list-field"><strong>Job#:</strong> ${data.job_number || ''}</div>
+                        <div class="rip-list-field"><strong>Version(s):</strong> ${(data.versions || []).join(', ')}</div>
+                        <div class="rip-list-field"><strong>Mat / Size:</strong> ${data.material || ''} / ${data.size || ''}</div>
+                        <div class="rip-list-field"><strong>Qty:</strong> ${data.quantity || ''}</div>
+                        <div class="rip-list-field"><strong>Due:</strong> ${data.due_date || ''}</div>
+                        <div class="rip-list-field"><strong>Printer:</strong> ${data.printer || ''}</div>
+                        <div class="rip-list-field"><strong>Ripped By:</strong> ${data.ripped_by || ''}</div>
+                    </div>
+                    <div class="rip-list-checkboxes">
+                        <span><input type="checkbox" ${data.print_mode?.includes('4/0') && !data.print_mode?.includes('4+') ? 'checked' : ''}> 4/0</span>
+                        <span><input type="checkbox" ${data.print_mode?.includes('4+4/0') ? 'checked' : ''}> 4+4/0</span>
+                        <span><input type="checkbox" ${data.print_mode?.includes('4+1/0') ? 'checked' : ''}> 4+1/0</span>
+                        <span><input type="checkbox" ${data.print_mode?.includes('4+1+4/0') ? 'checked' : ''}> 4+1+4/0</span>
+                        <span><input type="checkbox" ${data.print_mode?.includes('4+3+4/0') ? 'checked' : ''}> 4+3+4/0</span>
+                        <span><input type="checkbox" ${data.print_mode === '4/4' || data.print_mode?.includes('4/4') ? 'checked' : ''}> 4/4</span>
+                        <span><input type="checkbox"> Reverse Print / Second Surface</span>
+                    </div>
+                    <div class="rip-list-checkboxes">
+                        <span>Color Match:</span>
+                        <span><input type="checkbox" ${data.color_match === 'Laser' ? 'checked' : ''}> Laser</span>
+                        <span><input type="checkbox" ${data.color_match === 'Mini' ? 'checked' : ''}> Mini</span>
+                        <span><input type="checkbox"> Run as Sets</span>
+                    </div>
+                    <div class="rip-list-checkboxes">
+                        <span>Cutting:</span>
+                        <span><input type="checkbox" ${data.zund_cut ? 'checked' : ''}> Zund</span>
+                        <span><input type="checkbox"> Fotoba</span>
+                        <span><input type="checkbox"> Inline</span>
+                        <span><input type="checkbox"> Hand</span>
+                        <span><input type="checkbox"> Graphtech</span>
+                    </div>
+                    <div class="rip-list-table-container">
+                        <table class="rip-list-table">
+                            <tr><th>File Name</th><th>Qty</th><th>Date</th><th>Start</th><th>End</th><th>Initials</th><th># of Rolls</th></tr>
+                            ${leftColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+                        </table>
+                        <table class="rip-list-table">
+                            <tr><th>File Name</th><th>Qty</th><th>Date</th><th>Start</th><th>End</th><th>Initials</th><th># of Rolls</th></tr>
+                            ${rightColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+                        </table>
+                    </div>
+                    <div class="rip-list-footer">
+                        <div><strong>Notes:</strong> ${data.color_match === 'Mini' ? 'Check Mini' : (data.color_match === 'Laser' ? 'Check Laser' : '')}</div>
+                        <div><strong>Job#:</strong> ${data.job_number || ''} &nbsp;&nbsp; <strong>Customer:</strong> ${data.customer || ''} &nbsp;&nbsp; <strong>Version(s):</strong> ${(data.versions || []).join(', ')}</div>
+                        <div style="margin-top: 10px;">
+                            <span>Checked Ticket / Spec / Files / Bag for:</span>
+                            <span><input type="checkbox"> Size ___</span>
+                            <span><input type="checkbox"> Qty ___</span>
+                            <span><input type="checkbox"> Lam ___</span>
+                            <span><input type="checkbox"> Cut Marks ___</span>
+                            <span><input type="checkbox"> Content ___</span>
+                            <span><input type="checkbox"> Color ___</span>
+                        </div>
+                        <div style="margin-top: 10px; text-align: right;">
+                            Page ${pageIdx + 1} of ${pages.length}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        preview.innerHTML = html + `
+            <div style="margin-top: 20px;">
+                <button onclick="window.print()">🖨️ Print / Save as PDF</button>
+                <button onclick="saveCurrentRipList()">💾 Save This RIP List</button>
+            </div>
+        `;
+    }
+    
+    window.saveCurrentRipList = function() {
+        if (currentRipListData) {
+            saveRipList(currentRipListData, currentRipListData.customer, currentRipListData.job_number);
+            alert('RIP List saved!');
+        }
+    };
+    
+    // ========== GENERATE BUTTON ==========
+    document.getElementById('generateBtn').addEventListener('click', async () => {
+        const fileInput = document.getElementById('jobTicketPdf');
         if (!fileInput.files.length) {
             alert('Please select a PDF file to upload.');
             return;
         }
         
-        const forms = [];
-        document.querySelectorAll('.form-block').forEach((block, index) => {
-            const typeSelect = block.querySelector('.formTypeSelect');
-            const type = typeSelect.value;
-            const formEmoji = block.querySelector('h4 span').textContent;
-            const formData = { type, order: index + 1, formIdentifier: formEmoji };
-            
-            if (type === 'default') {
-                const versions = [];
-                block.querySelectorAll('.defaultFileName').forEach((input, i) => {
-                    const tileNum = block.querySelectorAll('.defaultTileNum')[i]?.value || '';
-                    versions.push({ fileName: input.value, tileNum });
-                });
-                formData.versions = versions;
-            } else if (type === 'spectacular') {
-                const versions = [];
-                block.querySelectorAll('.specFileName').forEach((input, versionIdx) => {
-                    const tiles = [];
-                    const tileInputs = block.querySelectorAll(`.specTileCount[data-version="${versionIdx + 1}"]`);
-                    tileInputs.forEach(t => tiles.push(t.value));
-                    versions.push({ fileName: input.value, tilesPerRow: tiles });
-                });
-                formData.versions = versions;
-            }
-            forms.push(formData);
-        });
-        
-        overlayTitle.textContent = 'Processing Your RIP List';
-        summaryContent.innerHTML = `
-            <div class="summary-item"><strong>Ripped by:</strong> ${rippedBy}</div>
-            <div class="summary-item"><strong>Printer:</strong> ${printer}</div>
-            <div class="summary-item"><strong>Color Match:</strong> ${colorMatch}</div>
-            <div class="summary-item"><strong>File:</strong> ${fileInput.files[0].name}</div>
-            <div class="summary-item"><strong>Forms:</strong> ${forms.length}</div>
-        `;
-        spinner.style.display = 'block';
-        statusMessage.textContent = 'Waiting for RIP List...';
-        downloadContainer.innerHTML = '';
-        errorContainer.innerHTML = '';
-        overlay.style.display = 'flex';
-        
-        const formDataPayload = new FormData();
-        formDataPayload.append('rippedBy', rippedBy);
-        formDataPayload.append('printer', printer);
-        formDataPayload.append('colorMatch', colorMatch);
-        formDataPayload.append('forms', JSON.stringify(forms));
-        formDataPayload.append('jobTicketPdf', fileInput.files[0]);
+        processingOverlay.style.display = 'flex';
+        processingTitle.textContent = 'Extracting PDF Text...';
+        processingMessage.textContent = '';
         
         try {
-            const response = await fetch(n8nWebhookUrl, { method: 'POST', body: formDataPayload });
-            if (response.ok) {
-                const data = await response.json();
-                spinner.style.display = 'none';
-                statusMessage.textContent = 'RIP List Ready!';
-                let url = data.url;
-                if (!url && Array.isArray(data) && data[0]) url = data[0].url;
-                if (url) {
-                    downloadContainer.innerHTML = `<a href="${url}" target="_blank" class="download-link">📥 Download RIP List</a><p style="margin-top: 10px; font-size: 12px; color: #666;">Link expires in 1 hour</p>`;
-                } else {
-                    downloadContainer.innerHTML = `<p>RIP List generated, but no URL returned.</p>`;
+            extractedPdfText = await extractPdfText(fileInput.files[0]);
+            
+            processingTitle.textContent = 'Processing Forms...';
+            
+            const forms = [];
+            document.querySelectorAll('.form-block').forEach((block, index) => {
+                const typeSelect = block.querySelector('.formTypeSelect');
+                const type = typeSelect.value;
+                const formEmoji = block.querySelector('h4 span').textContent;
+                const formData = { type, order: index + 1, formIdentifier: formEmoji };
+                
+                if (type === 'default') {
+                    const versions = [];
+                    block.querySelectorAll('.defaultFileName').forEach((input, i) => {
+                        const tileNum = block.querySelectorAll('.defaultTileNum')[i]?.value || '';
+                        versions.push({ fileName: input.value, tileNum });
+                    });
+                    formData.versions = versions;
+                } else if (type === 'spectacular') {
+                    const versions = [];
+                    block.querySelectorAll('.specFileName').forEach((input, versionIdx) => {
+                        const tiles = [];
+                        const tileInputs = block.querySelectorAll(`.specTileCount[data-version="${versionIdx + 1}"]`);
+                        tileInputs.forEach(t => tiles.push(t.value));
+                        versions.push({ fileName: input.value, tilesPerRow: tiles });
+                    });
+                    formData.versions = versions;
                 }
-            } else throw new Error(`Server returned ${response.status}`);
+                forms.push(formData);
+            });
+            
+            const payload = {
+                rippedBy: document.getElementById('rippedBy').value,
+                printer: document.getElementById('printer').value,
+                colorMatch: document.getElementById('colorMatch').value,
+                forms: forms
+            };
+            
+            processingTitle.textContent = 'Generating RIP List...';
+            
+            const ripListData = processRipList(extractedPdfText, payload);
+            currentRipListData = ripListData;
+            
+            renderRipList(ripListData);
+            
+            processingOverlay.style.display = 'none';
+            
+            // Scroll to preview
+            document.getElementById('ripListPreview').scrollIntoView({ behavior: 'smooth' });
+            
         } catch (error) {
             console.error('Error:', error);
-            spinner.style.display = 'none';
-            overlayTitle.textContent = 'Submission Failed';
-            statusMessage.textContent = '';
-            errorContainer.innerHTML = `<p>There was an error processing your request.</p><p style="font-size: 12px;">${error.message}</p><button onclick="document.getElementById('submissionOverlay').style.display='none'">Close</button>`;
+            processingTitle.textContent = 'Error';
+            processingMessage.textContent = error.message;
+            setTimeout(() => processingOverlay.style.display = 'none', 3000);
         }
     });
     
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
     document.body.addEventListener('dragover', (e) => e.preventDefault());
     document.body.addEventListener('drop', (e) => e.preventDefault());
 </script>
