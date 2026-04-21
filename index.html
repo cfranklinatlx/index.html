@@ -57,6 +57,33 @@
             background: transparent;
             z-index: 10;
         }
+        
+        .pdf-upload-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .pdf-upload-row input {
+            flex: 1;
+        }
+        .pdf-upload-row button {
+            white-space: nowrap;
+            margin: 0;
+            padding: 8px 12px;
+            font-size: 14px;
+        }
+        .btn-view {
+            background-color: #28a745;
+        }
+        .btn-view:hover {
+            background-color: #218838;
+        }
+        .btn-remove {
+            background-color: #dc3545;
+        }
+        .btn-remove:hover {
+            background-color: #c82333;
+        }
 
         #typeSelectorModal {
             display: none;
@@ -122,6 +149,15 @@
         }
         .download-link:hover { background: #218838; }
         .error-message { color: #dc3545; margin-top: 15px; }
+        
+        .pdf-status {
+            font-size: 12px;
+            margin-top: 5px;
+            color: #28a745;
+        }
+        .pdf-status.error {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -163,8 +199,13 @@
         </div>
 
         <div class="form-group">
-            <label>Upload Job Ticket PDF:</label>
-            <input type="file" id="jobTicketPdf" accept=".pdf,application/pdf" required>
+            <label>Job Ticket PDF:</label>
+            <div class="pdf-upload-row">
+                <input type="file" id="jobTicketPdf" accept=".pdf,application/pdf">
+                <button type="button" id="viewJobTicketBtn" class="btn-view" style="display: none;">👁️ View Online</button>
+                <button type="button" id="removePdfBtn" class="btn-remove" style="display: none;">✖️ Remove</button>
+            </div>
+            <div id="pdfStatus" class="pdf-status"></div>
         </div>
 
         <hr>
@@ -207,11 +248,20 @@
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook-test/106d0183-5d4a-4655-abe7-5aa10c4fad59';
+    const LITHO_USERNAME = 'vutek';
+    const LITHO_PASSWORD = 'Trigger13';
+    const CORS_PROXY = 'https://corsproxy.io/?';
     
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
+    
+    let currentJobNumber = null;
+    let currentPdfFile = null;
     
     const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
     const usedEmojis = new Set();
@@ -241,6 +291,106 @@
     function cleanFileName(fileName) {
         return fileName.replace(/\.pdf$/i, '');
     }
+    
+    function extractJobNumber(fileName) {
+        const match = fileName.match(/^(\d{6})/);
+        return match ? match[1] : null;
+    }
+    
+    async function fetchJobTicketPDF(jobNumber) {
+        const url = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
+        const proxyUrl = CORS_PROXY + encodeURIComponent(url);
+        const authString = btoa(`${LITHO_USERNAME}:${LITHO_PASSWORD}`);
+        
+        const response = await fetch(proxyUrl, {
+            headers: { 'Authorization': 'Basic ' + authString }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch job ticket: ${response.status}`);
+        }
+        
+        return await response.arrayBuffer();
+    }
+    
+    async function autoFetchAndSetPdf(jobNumber) {
+        const pdfStatus = document.getElementById('pdfStatus');
+        const viewBtn = document.getElementById('viewJobTicketBtn');
+        const removeBtn = document.getElementById('removePdfBtn');
+        const fileInput = document.getElementById('jobTicketPdf');
+        
+        try {
+            pdfStatus.textContent = '⏳ Fetching job ticket from Lithographix...';
+            pdfStatus.className = 'pdf-status';
+            
+            const pdfBytes = await fetchJobTicketPDF(jobNumber);
+            const pdfFile = new File([pdfBytes], `${jobNumber}_JobTicket.pdf`, { type: 'application/pdf' });
+            
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(pdfFile);
+            fileInput.files = dataTransfer.files;
+            currentPdfFile = pdfFile;
+            currentJobNumber = jobNumber;
+            
+            pdfStatus.textContent = '✅ Job ticket auto-loaded from Lithographix';
+            pdfStatus.className = 'pdf-status';
+            viewBtn.style.display = 'inline-block';
+            removeBtn.style.display = 'inline-block';
+            
+        } catch (error) {
+            console.error('Auto-fetch error:', error);
+            pdfStatus.textContent = `⚠️ Could not auto-fetch: ${error.message}`;
+            pdfStatus.className = 'pdf-status error';
+            viewBtn.style.display = 'none';
+        }
+    }
+    
+    function updatePdfButtons() {
+        const fileInput = document.getElementById('jobTicketPdf');
+        const viewBtn = document.getElementById('viewJobTicketBtn');
+        const removeBtn = document.getElementById('removePdfBtn');
+        const pdfStatus = document.getElementById('pdfStatus');
+        
+        if (fileInput.files.length > 0 && currentJobNumber) {
+            viewBtn.style.display = 'inline-block';
+            removeBtn.style.display = 'inline-block';
+        } else {
+            viewBtn.style.display = 'none';
+            removeBtn.style.display = 'none';
+            currentJobNumber = null;
+            currentPdfFile = null;
+            if (fileInput.files.length === 0) {
+                pdfStatus.textContent = '';
+            }
+        }
+    }
+    
+    document.getElementById('viewJobTicketBtn').addEventListener('click', () => {
+        if (currentJobNumber) {
+            const url = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${currentJobNumber}`;
+            window.open(url, '_blank');
+        } else {
+            alert('No job number available. Please drop a file first.');
+        }
+    });
+    
+    document.getElementById('removePdfBtn').addEventListener('click', () => {
+        const fileInput = document.getElementById('jobTicketPdf');
+        fileInput.value = '';
+        currentJobNumber = null;
+        currentPdfFile = null;
+        updatePdfButtons();
+        document.getElementById('pdfStatus').textContent = '📄 PDF removed';
+        document.getElementById('pdfStatus').className = 'pdf-status';
+    });
+    
+    document.getElementById('jobTicketPdf').addEventListener('change', () => {
+        if (document.getElementById('jobTicketPdf').files.length === 0) {
+            currentJobNumber = null;
+            currentPdfFile = null;
+        }
+        updatePdfButtons();
+    });
     
     function createFormBlock(formType = 'default') {
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -408,6 +558,13 @@
                             fileNameInputs[i].value = cleanFileName(file.name);
                         }
                     });
+                }
+                
+                // Auto-fetch PDF from Lithographix using the first file's job number
+                const firstFileName = files[0].name;
+                const jobNumber = extractJobNumber(firstFileName);
+                if (jobNumber && !currentJobNumber) {
+                    autoFetchAndSetPdf(jobNumber);
                 }
             }, 50);
         }
