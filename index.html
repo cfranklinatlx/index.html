@@ -139,54 +139,106 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* RIP List Preview Styles */
+        /* RIP List Preview - EXACT PDF REPLICA */
         #ripListPreview {
             margin-top: 30px;
-            border: 1px solid #ccc;
-            padding: 20px;
             background: white;
+            font-family: 'Courier New', monospace;
         }
         .rip-list-page {
-            font-family: 'Courier New', monospace;
-            font-size: 11px;
+            background: white;
+            padding: 20px 30px;
             margin-bottom: 30px;
             page-break-after: always;
+            position: relative;
+            min-height: 11in;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
         }
-        .rip-list-header {
+        .rip-list-title {
+            font-size: 48px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 5px;
+        }
+        .rip-list-top-row {
             display: flex;
-            flex-wrap: wrap;
-            border-bottom: 1px solid #000;
-            padding-bottom: 10px;
+            justify-content: space-between;
+            font-size: 14px;
             margin-bottom: 10px;
         }
         .rip-list-field {
-            margin-right: 30px;
-            margin-bottom: 5px;
+            font-size: 14px;
+            margin-bottom: 3px;
         }
-        .rip-list-checkboxes {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
+        .underline-field {
+            text-decoration: none;
+            border-bottom: 1px solid #000;
+            min-width: 100px;
+            display: inline-block;
+        }
+        .print-mode-row {
+            font-size: 13px;
+            margin: 15px 0 10px;
+            word-spacing: 15px;
+        }
+        .color-match-row {
+            font-size: 14px;
             margin: 10px 0;
         }
-        .rip-list-table-container {
-            display: flex;
-            gap: 20px;
+        .cutting-row {
+            font-size: 14px;
+            margin: 10px 0;
+            word-spacing: 15px;
         }
-        .rip-list-table {
+        .file-table-container {
+            display: flex;
+            gap: 30px;
+            margin: 20px 0;
+        }
+        .file-table {
             flex: 1;
             border-collapse: collapse;
-            width: 100%;
+            font-size: 12px;
         }
-        .rip-list-table td, .rip-list-table th {
-            border: 1px solid #000;
-            padding: 2px 5px;
-            font-size: 10px;
+        .file-table th {
+            text-align: left;
+            font-weight: bold;
+            padding-bottom: 5px;
         }
-        .rip-list-footer {
+        .file-table td {
+            padding: 2px 0;
+        }
+        .machine-settings {
+            font-size: 14px;
+            margin: 15px 0;
+        }
+        .machine-settings-row {
+            display: flex;
+            gap: 30px;
+            margin: 5px 0;
+        }
+        .bottom-row {
+            display: flex;
+            justify-content: space-between;
             margin-top: 20px;
-            border-top: 1px solid #000;
-            padding-top: 10px;
+            font-size: 14px;
+        }
+        .checked-ticket {
+            font-size: 14px;
+            margin-top: 15px;
+        }
+        .reset-print {
+            display: flex;
+            justify-content: flex-end;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .page-number {
+            text-align: right;
+            font-size: 12px;
+            margin-top: 10px;
+            color: #666;
         }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -286,31 +338,23 @@
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
     
-    // Initialize PDF.js
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     
-    // Animal emojis for form labels
     const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
     const usedEmojis = new Set();
     
     function getRandomEmoji() {
         const available = animalEmojis.filter(e => !usedEmojis.has(e));
-        if (available.length === 0) {
-            usedEmojis.clear();
-            return animalEmojis[0];
-        }
+        if (available.length === 0) { usedEmojis.clear(); return animalEmojis[0]; }
         const emoji = available[Math.floor(Math.random() * available.length)];
         usedEmojis.add(emoji);
         return emoji;
     }
     
-    function releaseEmoji(emoji) {
-        usedEmojis.delete(emoji);
-    }
+    function releaseEmoji(emoji) { usedEmojis.delete(emoji); }
     
     const formsContainer = document.getElementById('formsContainer');
     let pendingBatchFiles = [];
-    let extractedPdfText = '';
     let currentRipListData = null;
     
     const modal = document.getElementById('typeSelectorModal');
@@ -322,27 +366,21 @@
     const processingTitle = document.getElementById('processingTitle');
     const processingMessage = document.getElementById('processingMessage');
     
-    function cleanFileName(fileName) {
-        return fileName.replace(/\.pdf$/i, '');
-    }
+    function cleanFileName(fileName) { return fileName.replace(/\.pdf$/i, ''); }
     
-    // ========== PDF TEXT EXTRACTION ==========
     async function extractPdfText(file) {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         let fullText = '';
-        
         for (let i = 1; i <= pdf.numPages; i++) {
             const page = await pdf.getPage(i);
             const content = await page.getTextContent();
             const pageText = content.items.map(item => item.str).join(' ');
             fullText += pageText + '\n';
         }
-        
         return fullText;
     }
     
-    // ========== CREATE FORM BLOCK ==========
     function createFormBlock(formType = 'default') {
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
         const blockDiv = document.createElement('div');
@@ -354,9 +392,7 @@
         
         const leftDropZone = document.createElement('div');
         leftDropZone.className = 'drop-zone-left';
-        leftDropZone.addEventListener('dragover', (e) => {
-            e.preventDefault(); e.stopPropagation();
-        });
+        leftDropZone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
         leftDropZone.addEventListener('drop', (e) => {
             e.preventDefault(); e.stopPropagation();
             const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
@@ -368,10 +404,7 @@
         });
         blockDiv.appendChild(leftDropZone);
         
-        blockDiv.addEventListener('dragover', (e) => {
-            e.preventDefault(); e.stopPropagation();
-            blockDiv.classList.add('drag-over');
-        });
+        blockDiv.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); blockDiv.classList.add('drag-over'); });
         blockDiv.addEventListener('dragleave', () => blockDiv.classList.remove('drag-over'));
         blockDiv.addEventListener('drop', (e) => {
             e.preventDefault(); e.stopPropagation();
@@ -436,7 +469,6 @@
             } else if (type === 'spectacular') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
-                
                 function updateVersionFields() {
                     const qty = parseInt(qtyInput.value) || 1;
                     let fieldsHtml = '';
@@ -452,7 +484,6 @@
                     for (let i = 1; i <= qty; i++) {
                         const rowContainer = container.querySelector(`.specRowContainer_${i}`);
                         const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
-                        
                         function updateSpecRows() {
                             const rows = parseInt(rowCountInput.value) || 1;
                             let rowsHtml = '';
@@ -462,23 +493,18 @@
                                 rowsHtml += `</div>`;
                             }
                             rowContainer.innerHTML = rowsHtml;
-                            
                             const tileInputs = rowContainer.querySelectorAll('.specTileCount');
                             if (tileInputs.length > 0) {
                                 tileInputs[0].addEventListener('input', function(e) {
                                     const firstVal = e.target.value;
-                                    for (let j = 1; j < tileInputs.length; j++) {
-                                        tileInputs[j].value = firstVal;
-                                    }
+                                    for (let j = 1; j < tileInputs.length; j++) tileInputs[j].value = firstVal;
                                 });
                             }
                         }
-                        
                         rowCountInput.addEventListener('input', updateSpecRows);
                         updateSpecRows();
                     }
                 }
-                
                 qtyInput.addEventListener('input', updateVersionFields);
                 updateVersionFields();
             }
@@ -493,7 +519,6 @@
         const typeSelect = block.querySelector('.formTypeSelect');
         const type = typeSelect.value;
         const fileNames = files.map(f => cleanFileName(f.name));
-        
         const qtyInput = block.querySelector('.versionQty');
         if (qtyInput) {
             qtyInput.value = files.length;
@@ -502,13 +527,8 @@
                 let fileNameInputs;
                 if (type === 'default') fileNameInputs = block.querySelectorAll('.defaultFileName');
                 else if (type === 'spectacular') fileNameInputs = block.querySelectorAll('.specFileName');
-                
                 if (fileNameInputs) {
-                    files.forEach((file, i) => {
-                        if (fileNameInputs[i]) {
-                            fileNameInputs[i].value = cleanFileName(file.name);
-                        }
-                    });
+                    files.forEach((file, i) => { if (fileNameInputs[i]) fileNameInputs[i].value = cleanFileName(file.name); });
                 }
             }, 50);
         }
@@ -516,28 +536,20 @@
     
     window.removeFormBlock = function(blockId, emoji) {
         const block = document.getElementById(blockId);
-        if (block) {
-            releaseEmoji(emoji);
-            block.remove();
-        }
+        if (block) { releaseEmoji(emoji); block.remove(); }
     };
     
     createFormBlock('default');
     document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
     
-    // ========== BATCH DROP ZONE ==========
     const batchZone = document.getElementById('batchDropZone');
-    batchZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        batchZone.classList.add('drag-over');
-    });
+    batchZone.addEventListener('dragover', (e) => { e.preventDefault(); batchZone.classList.add('drag-over'); });
     batchZone.addEventListener('dragleave', () => batchZone.classList.remove('drag-over'));
     batchZone.addEventListener('drop', (e) => {
         e.preventDefault();
         batchZone.classList.remove('drag-over');
         const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
         if (files.length === 0) return;
-        
         pendingBatchFiles = files;
         fileCountSpan.textContent = files.length;
         modal.style.display = 'flex';
@@ -553,47 +565,22 @@
         pendingBatchFiles = [];
     });
     
-    document.getElementById('cancelBatchType').addEventListener('click', () => {
-        modal.style.display = 'none';
-        pendingBatchFiles = [];
-    });
+    document.getElementById('cancelBatchType').addEventListener('click', () => { modal.style.display = 'none'; pendingBatchFiles = []; });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
     
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.style.display = 'none';
-    });
-    
-    // ========== SAVES FUNCTIONALITY ==========
-    document.getElementById('savesBtn').addEventListener('click', () => {
-        loadSavesList();
-        savesModal.style.display = 'flex';
-    });
-    
-    document.getElementById('closeSavesModal').addEventListener('click', () => {
-        savesModal.style.display = 'none';
-    });
-    
-    savesModal.addEventListener('click', (e) => {
-        if (e.target === savesModal) savesModal.style.display = 'none';
-    });
+    document.getElementById('savesBtn').addEventListener('click', () => { loadSavesList(); savesModal.style.display = 'flex'; });
+    document.getElementById('closeSavesModal').addEventListener('click', () => { savesModal.style.display = 'none'; });
+    savesModal.addEventListener('click', (e) => { if (e.target === savesModal) savesModal.style.display = 'none'; });
     
     function loadSavesList() {
         const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
         savesList.innerHTML = '';
-        
-        if (saves.length === 0) {
-            savesList.innerHTML = '<li>No saved RIP lists</li>';
-            return;
-        }
-        
+        if (saves.length === 0) { savesList.innerHTML = '<li>No saved RIP lists</li>'; return; }
         saves.reverse().forEach((save, index) => {
             const li = document.createElement('li');
-            li.innerHTML = `
-                <span>${save.customer} - Job ${save.jobNumber} - ${save.timestamp}</span>
-                <span>
-                    <button onclick="loadSave(${saves.length - 1 - index})">Load</button>
-                    <span class="delete-save" onclick="deleteSave(${saves.length - 1 - index})">🗑️</span>
-                </span>
-            `;
+            li.innerHTML = `<span>${save.customer} - Job ${save.jobNumber} - ${save.timestamp}</span>
+                <span><button onclick="loadSave(${saves.length - 1 - index})">Load</button>
+                <span class="delete-save" onclick="deleteSave(${saves.length - 1 - index})">🗑️</span></span>`;
             savesList.appendChild(li);
         });
     }
@@ -601,11 +588,7 @@
     window.loadSave = function(index) {
         const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
         const save = saves[index];
-        if (save && save.ripListData) {
-            currentRipListData = save.ripListData;
-            renderRipList(save.ripListData);
-            savesModal.style.display = 'none';
-        }
+        if (save && save.ripListData) { currentRipListData = save.ripListData; renderRipList(save.ripListData); savesModal.style.display = 'none'; }
     };
     
     window.deleteSave = function(index) {
@@ -617,38 +600,35 @@
     
     function saveRipList(data, customer, jobNumber) {
         const saves = JSON.parse(localStorage.getItem('ripListSaves') || '[]');
-        saves.push({
-            customer: customer,
-            jobNumber: jobNumber,
-            timestamp: new Date().toLocaleString(),
-            ripListData: data
-        });
+        saves.push({ customer, jobNumber, timestamp: new Date().toLocaleString(), ripListData: data });
         if (saves.length > 50) saves.shift();
         localStorage.setItem('ripListSaves', JSON.stringify(saves));
     }
     
-    // ========== RIP LIST GENERATION ENGINE ==========
+    window.saveCurrentRipList = function() {
+        if (currentRipListData) {
+            saveRipList(currentRipListData, currentRipListData.customer, currentRipListData.job_number);
+            alert('RIP List saved!');
+        }
+    };
+    
+    // ========== RIP LIST PROCESSING ENGINE ==========
     function processRipList(pdfText, formData) {
-        // Customer extraction
         let extractedCustomer = '';
         const customerMatch1 = pdfText.match(/Customer\s*:?\s*([^\n]+)/i);
         if (customerMatch1) {
             const potentialCustomer = customerMatch1[1].trim();
-            if (!potentialCustomer.includes('/') && !potentialCustomer.includes('In-Prep') && potentialCustomer.length > 3) {
-                extractedCustomer = potentialCustomer;
-            }
+            if (!potentialCustomer.includes('/') && !potentialCustomer.includes('In-Prep') && potentialCustomer.length > 3) extractedCustomer = potentialCustomer;
         }
         if (!extractedCustomer) {
             const capsMatch = pdfText.match(/[A-Z]{3,}(?:\s+[A-Z&]{2,})+/);
             if (capsMatch) extractedCustomer = capsMatch[0];
         }
         
-        // Job number extraction
         let extractedJobNo = '';
         const jobNoMatch = pdfText.match(/JobNo\s*(\d{5,6})/);
         if (jobNoMatch) extractedJobNo = jobNoMatch[1];
         
-        // Split PDF into form sections
         const preTrimSplit = pdfText.split('PreTrim');
         const formSections = [];
         for (let i = 0; i < preTrimSplit.length - 1; i++) {
@@ -737,9 +717,7 @@
                 const isBillboard = stockWidth >= 100;
                 
                 allVersionsList.push(versionCode);
-                if (!firstFormExtracted) {
-                    firstFormExtracted = { ...extracted, formNum, isMultiFileForm };
-                }
+                if (!firstFormExtracted) firstFormExtracted = { ...extracted, formNum, isMultiFileForm };
                 
                 if (isMultiFileForm) {
                     const fileQuantity = extractFileQuantity(pdfSection, versionCode);
@@ -754,9 +732,7 @@
                         if (count > 0) {
                             const label = rowLabels[rowIndex] || String.fromCharCode(65 + rowIndex);
                             if (isBillboard) {
-                                for (let t = 1; t <= count; t++) {
-                                    fileNames.push(`${formNum.toString().padStart(3, '0')}_${label}${t}`);
-                                }
+                                for (let t = 1; t <= count; t++) fileNames.push(`${formNum.toString().padStart(3, '0')}_${label}${t}`);
                             } else {
                                 fileNames.push(`${formNum.toString().padStart(3, '0')}_${label}1-${label}${count}`);
                             }
@@ -766,26 +742,15 @@
                 } else {
                     fileNames.push(`${formNum.toString().padStart(3, '0')}_${fileName}`);
                     if (isBillboard) {
-                        if (tileCount === 1) {
-                            fileNames.push(`x${quantity}`);
-                        } else {
-                            for (let t = 1; t <= tileCount; t++) {
-                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A${t}`);
-                            }
-                        }
+                        if (tileCount === 1) fileNames.push(`x${quantity}`);
+                        else for (let t = 1; t <= tileCount; t++) fileNames.push(`${formNum.toString().padStart(3, '0')}_A${t}`);
                     } else {
                         if (quantity > 1) {
-                            if (tileCount === 1) {
-                                fileNames.push(`x${quantity}`);
-                            } else {
-                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount} x${quantity}`);
-                            }
+                            if (tileCount === 1) fileNames.push(`x${quantity}`);
+                            else fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount} x${quantity}`);
                         } else {
-                            if (tileCount === 1) {
-                                fileNames.push(`x${quantity}`);
-                            } else {
-                                fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount}`);
-                            }
+                            if (tileCount === 1) fileNames.push(`x${quantity}`);
+                            else fileNames.push(`${formNum.toString().padStart(3, '0')}_A1-A${tileCount}`);
                         }
                     }
                     fileNames.push('');
@@ -794,7 +759,6 @@
             });
         });
         
-        // Build output object
         const output = {
             customer: extractedCustomer,
             job_number: extractedJobNo,
@@ -814,16 +778,14 @@
             output.laminated = firstFormExtracted.laminated || false;
             output.zund_cut = firstFormExtracted.zundCut || false;
         }
-        
         return output;
     }
     
-    // ========== RENDER RIP LIST ==========
+    // ========== RENDER EXACT PDF REPLICA ==========
     function renderRipList(data) {
         const preview = document.getElementById('ripListPreview');
         const dateTime = new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit', hour: 'numeric', minute: '2-digit', hour12: true }).replace(',', '');
         
-        // Build file name rows
         const allFileNames = data.fileNames || [];
         const pages = [];
         const LINES_PER_PAGE = 48;
@@ -833,83 +795,140 @@
         }
         
         let html = '';
+        
         pages.forEach((pageFiles, pageIdx) => {
             const leftColumn = [];
             const rightColumn = [];
             
             for (let i = 0; i < LINES_PER_PAGE; i++) {
-                if (i % 2 === 0) {
-                    leftColumn.push(pageFiles[i] || '');
-                } else {
-                    rightColumn.push(pageFiles[i] || '');
-                }
+                if (i % 2 === 0) leftColumn.push(pageFiles[i] || '');
+                else rightColumn.push(pageFiles[i] || '');
             }
+            
+            const leftRows = leftColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('');
+            const rightRows = rightColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('');
+            
+            const notesValue = data.color_match === 'Mini' ? 'Check Mini' : (data.color_match === 'Laser' ? 'Check Laser' : '');
             
             html += `
                 <div class="rip-list-page">
-                    <div style="display: flex; justify-content: space-between;">
-                        <h3 style="margin:0;">Rip List / Print Form</h3>
-                        <span>${dateTime}</span>
+                    <div class="rip-list-title">Rip List / Print Form</div>
+                    
+                    <div class="rip-list-top-row">
+                        <span>Date & Time: <span class="underline-field">${dateTime}</span></span>
+                        <span>Job#: <span class="underline-field">${data.job_number || ''}</span></span>
+                        <span>Job#: <span class="underline-field">${data.job_number || ''}</span></span>
+                        <span>Job#: <span class="underline-field">${data.job_number || ''}</span></span>
                     </div>
-                    <div class="rip-list-header">
-                        <div class="rip-list-field"><strong>Customer:</strong> ${data.customer || ''}</div>
-                        <div class="rip-list-field"><strong>Job#:</strong> ${data.job_number || ''}</div>
-                        <div class="rip-list-field"><strong>Version(s):</strong> ${(data.versions || []).join(', ')}</div>
-                        <div class="rip-list-field"><strong>Mat / Size:</strong> ${data.material || ''} / ${data.size || ''}</div>
-                        <div class="rip-list-field"><strong>Qty:</strong> ${data.quantity || ''}</div>
-                        <div class="rip-list-field"><strong>Due:</strong> ${data.due_date || ''}</div>
-                        <div class="rip-list-field"><strong>Printer:</strong> ${data.printer || ''}</div>
-                        <div class="rip-list-field"><strong>Ripped By:</strong> ${data.ripped_by || ''}</div>
+                    
+                    <div class="rip-list-field">Due: <span class="underline-field">${data.due_date || ''}</span></div>
+                    <div class="rip-list-field">Qty: <span class="underline-field">${data.quantity || ''}</span></div>
+                    <div class="rip-list-field">Laminate?: <span class="underline-field">${data.laminated ? 'Yes' : 'No'}</span></div>
+                    <div class="rip-list-field">Printer: <span class="underline-field">${data.printer || ''}</span></div>
+                    
+                    <div class="print-mode-row">
+                        Print Mode:
+                        <input type="checkbox" ${data.print_mode?.includes('4/0') && !data.print_mode?.includes('4+') ? 'checked' : ''}> 4/0
+                        <input type="checkbox" ${data.print_mode?.includes('4+4/0') ? 'checked' : ''}> 4+4/0
+                        <input type="checkbox" ${data.print_mode?.includes('4+1/0') && !data.print_mode?.includes('4+1+4') ? 'checked' : ''}> 4+1/0
+                        <input type="checkbox" ${data.print_mode?.includes('4+1+4/0') ? 'checked' : ''}> 4+1+4/0
+                        <input type="checkbox" ${data.print_mode?.includes('4+3+4/0') ? 'checked' : ''}> 4+3+4/0
+                        <input type="checkbox" ${data.print_mode === '4/4' || data.print_mode?.includes('4/4') ? 'checked' : ''}> 4/4
+                        <input type="checkbox"> Reverse Print / Second Surface
                     </div>
-                    <div class="rip-list-checkboxes">
-                        <span><input type="checkbox" ${data.print_mode?.includes('4/0') && !data.print_mode?.includes('4+') ? 'checked' : ''}> 4/0</span>
-                        <span><input type="checkbox" ${data.print_mode?.includes('4+4/0') ? 'checked' : ''}> 4+4/0</span>
-                        <span><input type="checkbox" ${data.print_mode?.includes('4+1/0') ? 'checked' : ''}> 4+1/0</span>
-                        <span><input type="checkbox" ${data.print_mode?.includes('4+1+4/0') ? 'checked' : ''}> 4+1+4/0</span>
-                        <span><input type="checkbox" ${data.print_mode?.includes('4+3+4/0') ? 'checked' : ''}> 4+3+4/0</span>
-                        <span><input type="checkbox" ${data.print_mode === '4/4' || data.print_mode?.includes('4/4') ? 'checked' : ''}> 4/4</span>
-                        <span><input type="checkbox"> Reverse Print / Second Surface</span>
-                    </div>
-                    <div class="rip-list-checkboxes">
-                        <span>Color Match:</span>
-                        <span><input type="checkbox" ${data.color_match === 'Laser' ? 'checked' : ''}> Laser</span>
-                        <span><input type="checkbox" ${data.color_match === 'Mini' ? 'checked' : ''}> Mini</span>
-                        <span><input type="checkbox"> Run as Sets</span>
-                    </div>
-                    <div class="rip-list-checkboxes">
-                        <span>Cutting:</span>
-                        <span><input type="checkbox" ${data.zund_cut ? 'checked' : ''}> Zund</span>
-                        <span><input type="checkbox"> Fotoba</span>
-                        <span><input type="checkbox"> Inline</span>
-                        <span><input type="checkbox"> Hand</span>
-                        <span><input type="checkbox"> Graphtech</span>
-                    </div>
-                    <div class="rip-list-table-container">
-                        <table class="rip-list-table">
+                    
+                    <div class="file-table-container">
+                        <table class="file-table">
                             <tr><th>File Name</th><th>Qty</th><th>Date</th><th>Start</th><th>End</th><th>Initials</th><th># of Rolls</th></tr>
-                            ${leftColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+                            ${leftRows}
                         </table>
-                        <table class="rip-list-table">
+                        <table class="file-table">
                             <tr><th>File Name</th><th>Qty</th><th>Date</th><th>Start</th><th>End</th><th>Initials</th><th># of Rolls</th></tr>
-                            ${rightColumn.map(f => `<tr><td>${f}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`).join('')}
+                            ${rightRows}
                         </table>
                     </div>
-                    <div class="rip-list-footer">
-                        <div><strong>Notes:</strong> ${data.color_match === 'Mini' ? 'Check Mini' : (data.color_match === 'Laser' ? 'Check Laser' : '')}</div>
-                        <div><strong>Job#:</strong> ${data.job_number || ''} &nbsp;&nbsp; <strong>Customer:</strong> ${data.customer || ''} &nbsp;&nbsp; <strong>Version(s):</strong> ${(data.versions || []).join(', ')}</div>
-                        <div style="margin-top: 10px;">
-                            <span>Checked Ticket / Spec / Files / Bag for:</span>
-                            <span><input type="checkbox"> Size ___</span>
-                            <span><input type="checkbox"> Qty ___</span>
-                            <span><input type="checkbox"> Lam ___</span>
-                            <span><input type="checkbox"> Cut Marks ___</span>
-                            <span><input type="checkbox"> Content ___</span>
-                            <span><input type="checkbox"> Color ___</span>
+                    
+                    <div class="rip-list-field">Customer: <span class="underline-field">${data.customer || ''}</span></div>
+                    
+                    <div class="machine-settings">
+                        <div>Machine Settings:</div>
+                        <div class="machine-settings-row">
+                            <span><input type="radio" name="std${pageIdx}" checked> Standard</span>
+                            <span><input type="radio" name="std${pageIdx}"> Different</span>
+                            <span><input type="checkbox"> 5R</span>
+                            <span><input type="checkbox"> HS125</span>
+                            <span><input type="checkbox"> FabriVU</span>
                         </div>
-                        <div style="margin-top: 10px; text-align: right;">
-                            Page ${pageIdx + 1} of ${pages.length}
+                        <div class="machine-settings-row">
+                            <span>Mode / Pass: ____</span>
+                            <span>Interlace: ___________</span>
+                            <span>Temperature: __________</span>
+                        </div>
+                        <div class="machine-settings-row">
+                            <span>Direction: ______</span>
+                            <span>Smoothing: _________</span>
+                            <span>Set Pressure Infeed: _____</span>
+                        </div>
+                        <div class="machine-settings-row">
+                            <span>Speed: _________</span>
+                            <span>Curing: ____________</span>
+                            <span>Set Pressure Exit: _______</span>
+                        </div>
+                        <div class="machine-settings-row">
+                            <span>UV Mode: ______</span>
+                            <span>Shutter Option: ______</span>
+                        </div>
+                        <div class="machine-settings-row">
+                            <span>UV Power: _____</span>
+                            <span>Gloss Mode: ________</span>
+                        </div>
+                        <div class="machine-settings-row">
+                            <span>Double Strike: ___</span>
+                            <span>Carriage Speed: ______</span>
                         </div>
                     </div>
+                    
+                    <div class="rip-list-field">Notes: <span class="underline-field">${notesValue}</span></div>
+                    
+                    <div class="rip-list-field">Customer: <span class="underline-field">${data.customer || ''}</span></div>
+                    <div class="rip-list-field">Customer: <span class="underline-field">${data.customer || ''}</span></div>
+                    <div class="rip-list-field">Version(s): <span class="underline-field">${(data.versions || []).join(', ')}</span></div>
+                    <div class="rip-list-field">Version(s): <span class="underline-field">${(data.versions || []).join(', ')}</span></div>
+                    <div class="rip-list-field">Version(s): <span class="underline-field">${(data.versions || []).join(', ')}</span></div>
+                    <div class="rip-list-field">Mat / Size: <span class="underline-field">${data.material || ''} / ${data.size || ''}</span></div>
+                    
+                    <div class="color-match-row">
+                        Color Match: 
+                        <input type="checkbox" ${data.color_match === 'Laser' ? 'checked' : ''}> Laser
+                        <input type="checkbox" ${data.color_match === 'Mini' ? 'checked' : ''}> Mini
+                        <input type="checkbox"> Run as Sets
+                    </div>
+                    
+                    <div class="cutting-row">
+                        Cutting:
+                        <input type="checkbox" ${data.zund_cut ? 'checked' : ''}> Zund
+                        <input type="checkbox"> Fotoba
+                        <input type="checkbox"> Inline
+                        <input type="checkbox"> Hand
+                        <input type="checkbox"> Graphtech
+                    </div>
+                    
+                    <div class="checked-ticket">
+                        Checked Ticket / Spec / Files / Bag for: 
+                        Size ___ Qty ___ Lam ___ Cut Marks ___ Content ___ Color ___
+                    </div>
+                    
+                    <div class="bottom-row">
+                        <span>Ripped By: <span class="underline-field">${data.ripped_by || ''}</span></span>
+                        <span>04/Apr 14, 2026/YYYY 11:07 A</span>
+                    </div>
+                    
+                    <div class="reset-print">
+                        <span>Reset Form</span>
+                        <span style="background:#ddd; padding:5px 15px;">Print, Click Here!</span>
+                    </div>
+                    
+                    <div class="page-number">Page ${pageIdx + 1} of ${pages.length}</div>
                 </div>
             `;
         });
@@ -920,30 +939,20 @@
                 <button onclick="saveCurrentRipList()">💾 Save This RIP List</button>
             </div>
         `;
+        currentRipListData = data;
     }
-    
-    window.saveCurrentRipList = function() {
-        if (currentRipListData) {
-            saveRipList(currentRipListData, currentRipListData.customer, currentRipListData.job_number);
-            alert('RIP List saved!');
-        }
-    };
     
     // ========== GENERATE BUTTON ==========
     document.getElementById('generateBtn').addEventListener('click', async () => {
         const fileInput = document.getElementById('jobTicketPdf');
-        if (!fileInput.files.length) {
-            alert('Please select a PDF file to upload.');
-            return;
-        }
+        if (!fileInput.files.length) { alert('Please select a PDF file to upload.'); return; }
         
         processingOverlay.style.display = 'flex';
         processingTitle.textContent = 'Extracting PDF Text...';
         processingMessage.textContent = '';
         
         try {
-            extractedPdfText = await extractPdfText(fileInput.files[0]);
-            
+            const pdfText = await extractPdfText(fileInput.files[0]);
             processingTitle.textContent = 'Processing Forms...';
             
             const forms = [];
@@ -981,15 +990,9 @@
             };
             
             processingTitle.textContent = 'Generating RIP List...';
-            
-            const ripListData = processRipList(extractedPdfText, payload);
-            currentRipListData = ripListData;
-            
+            const ripListData = processRipList(pdfText, payload);
             renderRipList(ripListData);
-            
             processingOverlay.style.display = 'none';
-            
-            // Scroll to preview
             document.getElementById('ripListPreview').scrollIntoView({ behavior: 'smooth' });
             
         } catch (error) {
