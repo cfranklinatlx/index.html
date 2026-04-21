@@ -187,6 +187,7 @@
         <p>Choose the type for <span id="fileCount">0</span> new form(s):</p>
         <select id="batchTypeSelect">
             <option value="default" selected>Default</option>
+            <option value="billboard">Billboard</option>
             <option value="spectacular">Vinyl Spectacular</option>
         </select>
         <br>
@@ -289,6 +290,7 @@
                 <select class="formTypeSelect" data-block-id="${blockId}">
                     <option value="">-- Select --</option>
                     <option value="default" ${formType === 'default' ? 'selected' : ''}>Default</option>
+                    <option value="billboard" ${formType === 'billboard' ? 'selected' : ''}>Billboard</option>
                     <option value="spectacular" ${formType === 'spectacular' ? 'selected' : ''}>Vinyl Spectacular</option>
                 </select>
             </div>
@@ -302,7 +304,7 @@
         
         function generateFields(type) {
             let html = '';
-            if (type === 'default') {
+            if (type === 'default' || type === 'billboard') {
                 html = `
                     <label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br>
                     <div class="versionContainer"></div>
@@ -315,7 +317,7 @@
             }
             fieldsArea.innerHTML = html;
             
-            if (type === 'default') {
+            if (type === 'default' || type === 'billboard') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
                 function updateVersionFields() {
@@ -324,7 +326,6 @@
                     for (let i = 1; i <= qty; i++) {
                         fieldsHtml += `<div class="version-row">`;
                         fieldsHtml += `<label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file"><br>`;
-                        fieldsHtml += `<label>Tile #${i}:</label> <input type="text" class="defaultTileNum" data-index="${i}" placeholder="e.g., 3"><br>`;
                         fieldsHtml += `</div>`;
                     }
                     container.innerHTML = fieldsHtml;
@@ -347,7 +348,6 @@
                     }
                     container.innerHTML = fieldsHtml;
                     
-                    // Set up each version's row container
                     for (let i = 1; i <= qty; i++) {
                         const rowContainer = container.querySelector(`.specRowContainer_${i}`);
                         const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
@@ -362,7 +362,6 @@
                             }
                             rowContainer.innerHTML = rowsHtml;
                             
-                            // Auto-fill: when first row changes, copy to all other rows in THIS version
                             const tileInputs = rowContainer.querySelectorAll('.specTileCount');
                             if (tileInputs.length > 0) {
                                 tileInputs[0].addEventListener('input', function(e) {
@@ -400,7 +399,7 @@
             qtyInput.dispatchEvent(new Event('input'));
             setTimeout(() => {
                 let fileNameInputs;
-                if (type === 'default') fileNameInputs = block.querySelectorAll('.defaultFileName');
+                if (type === 'default' || type === 'billboard') fileNameInputs = block.querySelectorAll('.defaultFileName');
                 else if (type === 'spectacular') fileNameInputs = block.querySelectorAll('.specFileName');
                 
                 if (fileNameInputs) {
@@ -487,11 +486,10 @@
             const formEmoji = block.querySelector('h4 span').textContent;
             const formData = { type, order: index + 1, formIdentifier: formEmoji };
             
-            if (type === 'default') {
+            if (type === 'default' || type === 'billboard') {
                 const versions = [];
                 block.querySelectorAll('.defaultFileName').forEach((input, i) => {
-                    const tileNum = block.querySelectorAll('.defaultTileNum')[i]?.value || '';
-                    versions.push({ fileName: input.value, tileNum });
+                    versions.push({ fileName: input.value, tileNum: '' });
                 });
                 formData.versions = versions;
             } else if (type === 'spectacular') {
