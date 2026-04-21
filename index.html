@@ -608,15 +608,16 @@
         return output;
     }
     
-    // ========== PDF GENERATION WITH PDF-LIB ==========
-    async function generatePDF(data) {
-        const { PDFDocument } = PDFLib;
-        
-        // Fetch the template
-        processingMessage.textContent = 'Loading template...';
-        const templateBytes = await fetch(TEMPLATE_URL).then(res => res.arrayBuffer());
-        const templatePdf = await PDFDocument.load(templateBytes);
-        const form = templatePdf.getForm();
+// ========== PDF GENERATION WITH PDF-LIB ==========
+async function generatePDF(data) {
+    const { PDFDocument } = PDFLib;
+    
+    // Use a CORS proxy to access Google Drive
+    const PROXY_URL = 'https://corsproxy.io/?';
+    processingMessage.textContent = 'Loading template...';
+    const templateBytes = await fetch(PROXY_URL + encodeURIComponent(TEMPLATE_URL)).then(res => res.arrayBuffer());
+    const templatePdf = await PDFDocument.load(templateBytes);
+    const form = templatePdf.getForm();
         
         // Get all file names and chunk into pages (48 lines per page)
         const allFileNames = data.fileNames || [];
