@@ -189,6 +189,13 @@
         }
         .btn-yes { background: #28a745; color: white; }
         .btn-no { background: #dc3545; color: white; }
+        .copy-textarea {
+            width: 100%;
+            height: 150px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -294,6 +301,7 @@
     let currentJobNumber = null;
     let currentPdfFile = null;
     let lastFormDataForEmail = null;
+    let lastSummaryText = null;
     
     const animalEmojis = ['🐶', '🐱', '🦊', '🐻', '🐼', '🐨', '🦁', '🐮', '🐷', '🐸', '🐧', '🦉', '🦄', '🐙', '🦋'];
     const usedEmojis = new Set();
@@ -658,11 +666,9 @@
     const downloadContainer = document.getElementById('downloadContainer');
     const errorContainer = document.getElementById('errorContainer');
 
-    // Function to send failure email via mailto
-    function sendFailureEmail(summaryText, timestamp, formData) {
-        const subject = encodeURIComponent('Fail');
-        const body = encodeURIComponent(
-            `=== RIP LIST FAILURE REPORT ===\n\n` +
+    // Function to generate failure report text
+    function generateFailureReport(summaryText, timestamp, formData) {
+        return `=== RIP LIST FAILURE REPORT ===\n\n` +
             `Timestamp: ${timestamp}\n\n` +
             `=== FORM DATA ===\n` +
             `Ripped By: ${formData.rippedBy}\n` +
@@ -671,12 +677,41 @@
             `Job Number: ${formData.jobNumber || 'N/A'}\n\n` +
             `=== FORMS SUBMITTED ===\n${JSON.stringify(formData.forms, null, 2)}\n\n` +
             `=== GENERATED SUMMARY ===\n${summaryText}\n\n` +
-            `=== USER ACTION ===\nUser reported the RIP list did not work as expected.`
-        );
-        window.location.href = `mailto:${FAILURE_EMAIL}?subject=${subject}&body=${body}`;
+            `=== USER ACTION ===\nUser reported the RIP list did not work as expected.`;
     }
     
-    // Function to show feedback dialog
+    // Function to show feedback dialog (waits for user to open PDF first)
+    let pdfWindow = null;
+    let feedbackShown = false;
+    
+    function showFeedbackDialogAfterPdfOpens(summaryText, timestamp, formData, pdfUrl) {
+        // Check if the PDF window is still open and has loaded
+        const checkPdfWindow = setInterval(() => {
+            if (pdfWindow && !pdfWindow.closed && pdfWindow.document && pdfWindow.document.readyState === 'complete') {
+                clearInterval(checkPdfWindow);
+                if (!feedbackShown) {
+                    feedbackShown = true;
+                    showFeedbackDialog(summaryText, timestamp, formData);
+                }
+            } else if (pdfWindow && pdfWindow.closed) {
+                clearInterval(checkPdfWindow);
+                if (!feedbackShown) {
+                    feedbackShown = true;
+                    showFeedbackDialog(summaryText, timestamp, formData);
+                }
+            }
+        }, 500);
+        
+        // Fallback: show after 5 seconds regardless
+        setTimeout(() => {
+            if (!feedbackShown) {
+                clearInterval(checkPdfWindow);
+                feedbackShown = true;
+                showFeedbackDialog(summaryText, timestamp, formData);
+            }
+        }, 8000);
+    }
+    
     function showFeedbackDialog(summaryText, timestamp, formData) {
         const existingModal = document.getElementById('feedbackModal');
         if (existingModal) existingModal.remove();
@@ -700,8 +735,53 @@
         
         document.getElementById('feedbackNo').addEventListener('click', () => {
             modalDiv.remove();
-            sendFailureEmail(summaryText, timestamp, formData);
-            alert('Failure report sent. Thank you for your feedback.');
+            
+            // Generate the failure report
+            const report = generateFailureReport(summaryText, timestamp, formData);
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(report).then(() => {
+                // Show a more helpful dialog with instructions
+                const instructionModal = document.createElement('div');
+                instructionModal.id = 'instructionModal';
+                instructionModal.className = 'feedback-modal';
+                instructionModal.innerHTML = `
+                    <div class="feedback-card">
+                        <h3>📋 Failure Report Copied</h3>
+                        <p>The failure report has been copied to your clipboard.</p>
+                        <p>Please open your email client and send to:</p>
+                        <p><strong>${FAILURE_EMAIL}</strong></p>
+                        <p>Subject: <strong>Fail</strong></p>
+                        <button id="closeInstructionBtn" class="btn-yes">OK, I'll send it</button>
+                    </div>
+                `;
+                document.body.appendChild(instructionModal);
+                document.getElementById('closeInstructionBtn').addEventListener('click', () => {
+                    instructionModal.remove();
+                });
+            }).catch(() => {
+                // Fallback: show textarea for manual copy
+                const instructionModal = document.createElement('div');
+                instructionModal.id = 'instructionModal';
+                instructionModal.className = 'feedback-modal';
+                instructionModal.innerHTML = `
+                    <div class="feedback-card">
+                        <h3>⚠️ Please Copy the Report Below</h3>
+                        <textarea class="copy-textarea" id="failureReportText" readonly></textarea>
+                        <p>Please copy the text above and email it to:</p>
+                        <p><strong>${FAILURE_EMAIL}</strong></p>
+                        <p>Subject: <strong>Fail</strong></p>
+                        <button id="closeInstructionBtn" class="btn-yes">Close</button>
+                    </div>
+                `;
+                document.body.appendChild(instructionModal);
+                document.getElementById('failureReportText').value = report;
+                document.getElementById('closeInstructionBtn').addEventListener('click', () => {
+                    instructionModal.remove();
+                });
+                // Auto-select text for easy copy
+                document.getElementById('failureReportText').select();
+            });
         });
     }
 
@@ -785,15 +865,18 @@
                 if (url) {
                     downloadContainer.innerHTML = `<a href="${url}" target="_blank" class="download-link">📥 Download RIP List</a><p style="margin-top: 10px; font-size: 12px; color: #666;">Link expires in 1 hour</p>`;
                     
-                    // Open PDF in new window
-                    window.open(url, '_blank');
+                    // Open PDF in new window and track it
+                    pdfWindow = window.open(url, '_blank');
                     
-                    // Get summary text and show feedback dialog
+                    // Get summary text and show feedback dialog after PDF loads
                     const summaryText = summaryContent.innerText;
                     const timestamp = new Date().toLocaleString();
-                    setTimeout(() => {
-                        showFeedbackDialog(summaryText, timestamp, formDataForEmail);
-                    }, 1000);
+                    
+                    // Reset feedback flag
+                    feedbackShown = false;
+                    
+                    // Show feedback dialog after PDF has loaded or been closed
+                    showFeedbackDialogAfterPdfOpens(summaryText, timestamp, formDataForEmail, url);
                     
                 } else {
                     downloadContainer.innerHTML = `<p>RIP List generated, but no URL returned.</p>`;
