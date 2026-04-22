@@ -108,7 +108,10 @@
 
         #submissionOverlay {
             position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             background: rgba(255, 255, 255, 0.95);
             display: none;
             justify-content: center;
@@ -159,7 +162,6 @@
             color: #dc3545;
         }
         
-        /* Failures Button */
         .failures-btn {
             position: fixed;
             top: 20px;
@@ -177,7 +179,6 @@
             background: #c82333;
         }
         
-        /* Failures Modal */
         .failures-modal {
             position: fixed;
             top: 0;
@@ -240,7 +241,6 @@
             background: #6c757d;
         }
         
-        /* Feedback Modal */
         .feedback-modal {
             position: fixed;
             top: 0;
@@ -403,8 +403,7 @@
     function addFailure(failureData) {
         failureData.id = Date.now();
         failureData.timestamp = new Date().toLocaleString();
-        failures.unshift(failureData); // add to beginning
-        // Keep only last 50 failures
+        failures.unshift(failureData);
         if (failures.length > 50) failures = failures.slice(0, 50);
         saveFailures();
     }
@@ -413,29 +412,25 @@
         failures = failures.filter(f => f.id !== id);
         saveFailures();
         if (document.getElementById('failuresModal')) {
-            showFailuresModal(); // refresh modal
+            showFailuresModal();
         }
     }
     
     function loadFailureIntoForm(failure) {
-        // Load rippedBy, printer, colorMatch
         document.getElementById('rippedBy').value = failure.rippedBy || '';
         document.getElementById('printer').value = failure.printer || '5R1';
         document.getElementById('colorMatch').value = failure.colorMatch || 'Laser';
         
-        // Clear existing forms
         const formsContainer = document.getElementById('formsContainer');
         while (formsContainer.firstChild) {
             formsContainer.removeChild(formsContainer.firstChild);
         }
         
-        // Recreate forms from failure data
         if (failure.forms && failure.forms.length) {
             failure.forms.forEach((form, idx) => {
                 const fileType = form.type || 'default';
                 const newBlock = createFormBlock(fileType);
                 
-                // Populate versions
                 const versions = form.versions || [];
                 const qtyInput = newBlock.querySelector('.versionQty');
                 if (qtyInput) {
@@ -455,7 +450,6 @@
                                 }
                             });
                         }
-                        // For spectacular, also restore tile counts
                         if (fileType === 'spectacular' && versions.length) {
                             versions.forEach((v, vIdx) => {
                                 const tileInputs = newBlock.querySelectorAll(`.specTileCount[data-version="${vIdx + 1}"]`);
@@ -470,13 +464,11 @@
                 }
             });
         } else {
-            // Ensure at least one empty form
             if (document.getElementById('formsContainer').children.length === 0) {
                 createFormBlock('default');
             }
         }
         
-        // Auto-fetch PDF if job number is available
         if (failure.jobNumber && failure.jobNumber !== 'Unknown') {
             autoFetchAndSetPdf(failure.jobNumber);
         }
@@ -526,7 +518,6 @@
         `;
         document.body.appendChild(modal);
         
-        // Add event listeners to buttons
         document.querySelectorAll('.btn-load').forEach(btn => {
             btn.addEventListener('click', () => {
                 const id = parseInt(btn.dataset.id);
@@ -542,7 +533,7 @@
             btn.addEventListener('click', () => {
                 const id = parseInt(btn.dataset.id);
                 deleteFailure(id);
-                showFailuresModal(); // refresh
+                showFailuresModal();
             });
         });
         
@@ -920,7 +911,6 @@
     const downloadContainer = document.getElementById('downloadContainer');
     const errorContainer = document.getElementById('errorContainer');
 
-    // Function to save failure to localStorage
     function saveFailureToLocalStorage(summaryText, timestamp, formData, url) {
         const failureData = {
             id: Date.now(),
@@ -936,56 +926,13 @@
         addFailure(failureData);
     }
     
-    // Feedback dialog - only shows after PDF loads
-    let pdfWindow = null;
-    let feedbackShown = false;
-    let pdfLoadTimeout = null;
+    // Questionnaire appears immediately after submit
+    let feedbackDialogShown = false;
     
-    function showFeedbackDialogAfterPdfOpens(summaryText, timestamp, formData, pdfUrl) {
-        // Listen for PDF window load
-        const checkInterval = setInterval(() => {
-            if (pdfWindow && !pdfWindow.closed) {
-                try {
-                    // Check if PDF is loaded (readyState complete)
-                    if (pdfWindow.document && pdfWindow.document.readyState === 'complete') {
-                        clearInterval(checkInterval);
-                        if (pdfLoadTimeout) clearTimeout(pdfLoadTimeout);
-                        if (!feedbackShown) {
-                            feedbackShown = true;
-                            showFeedbackDialog(summaryText, timestamp, formData, pdfUrl);
-                        }
-                    }
-                } catch(e) {
-                    // Cross-origin error - can't access PDF window, show after 3 seconds
-                    clearInterval(checkInterval);
-                    if (!feedbackShown) {
-                        feedbackShown = true;
-                        setTimeout(() => {
-                            showFeedbackDialog(summaryText, timestamp, formData, pdfUrl);
-                        }, 1000);
-                    }
-                }
-            } else if (pdfWindow && pdfWindow.closed) {
-                clearInterval(checkInterval);
-                if (pdfLoadTimeout) clearTimeout(pdfLoadTimeout);
-                if (!feedbackShown) {
-                    feedbackShown = true;
-                    showFeedbackDialog(summaryText, timestamp, formData, pdfUrl);
-                }
-            }
-        }, 500);
+    function showFeedbackDialogImmediately(summaryText, timestamp, formData, pdfUrl) {
+        if (feedbackDialogShown) return;
+        feedbackDialogShown = true;
         
-        // Fallback: show after 10 seconds regardless
-        pdfLoadTimeout = setTimeout(() => {
-            clearInterval(checkInterval);
-            if (!feedbackShown) {
-                feedbackShown = true;
-                showFeedbackDialog(summaryText, timestamp, formData, pdfUrl);
-            }
-        }, 10000);
-    }
-    
-    function showFeedbackDialog(summaryText, timestamp, formData, pdfUrl) {
         const existingModal = document.getElementById('feedbackModal');
         if (existingModal) existingModal.remove();
         
@@ -1080,6 +1027,9 @@
         formDataPayload.append('forms', JSON.stringify(forms));
         formDataPayload.append('jobTicketPdf', fileInput.files[0]);
         
+        // Reset feedback flag
+        feedbackDialogShown = false;
+        
         try {
             const response = await fetch(n8nWebhookUrl, { method: 'POST', body: formDataPayload });
             if (response.ok) {
@@ -1091,13 +1041,14 @@
                 if (url) {
                     downloadContainer.innerHTML = `<a href="${url}" target="_blank" class="download-link">📥 Download RIP List</a><p style="margin-top: 10px; font-size: 12px; color: #666;">Link expires in 1 hour</p>`;
                     
-                    pdfWindow = window.open(url, '_blank');
+                    // Open PDF in new window
+                    window.open(url, '_blank');
                     
                     const summaryText = summaryContent.innerText;
                     const timestamp = new Date().toLocaleString();
                     
-                    feedbackShown = false;
-                    showFeedbackDialogAfterPdfOpens(summaryText, timestamp, formDataForEmail, url);
+                    // Show questionnaire immediately
+                    showFeedbackDialogImmediately(summaryText, timestamp, formDataForEmail, url);
                     
                 } else {
                     downloadContainer.innerHTML = `<p>RIP List generated, but no URL returned.</p>`;
