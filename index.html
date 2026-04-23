@@ -385,8 +385,8 @@
 
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
     const n8nFailuresWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/a6baebcc-d239-40ce-8baa-9c0bf8761e6a';
-    const LITHO_USERNAME = '';
-    const LITHO_PASSWORD = '';
+    const LITHO_USERNAME = 'vutek';
+    const LITHO_PASSWORD = 'Trigger13';
     
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
@@ -633,11 +633,14 @@
         return match ? match[1] : null;
     }
     
+    // UPDATED: fetchJobTicketPDF using CORS proxy
     async function fetchJobTicketPDF(jobNumber) {
-        const url = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
+        const targetUrl = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
+        // Using corsproxy.io - a free CORS proxy that works with authentication
+        const proxyUrl = 'https://corsproxy.io/?';
         const authString = btoa(`${LITHO_USERNAME}:${LITHO_PASSWORD}`);
         
-        const response = await fetch(url, {
+        const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
             headers: { 
                 'Authorization': 'Basic ' + authString
             }
