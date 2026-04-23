@@ -268,6 +268,17 @@
         .btn-close-failures {
             background: #6c757d;
         }
+        .loading-small {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -373,6 +384,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
+    const n8nFailuresWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/a6baebcc-d239-40ce-8baa-9c0bf8761e6a';
     const LITHO_USERNAME = '';
     const LITHO_PASSWORD = '';
     
@@ -383,22 +395,31 @@
     let currentPdfFile = null;
     
     // ============================================
-    // Failures Storage System
+    // Failures Storage System (Cloud-based via n8n)
     // ============================================
     let failures = [];
     
-    function loadFailures() {
-        const stored = localStorage.getItem('ripListFailures');
-        if (stored) {
-            try {
-                failures = JSON.parse(stored);
-            } catch(e) { failures = []; }
+    async function loadFailures() {
+        try {
+            const response = await fetch(n8nFailuresWebhookUrl, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                failures = Array.isArray(data) ? data : [];
+            } else {
+                failures = [];
+            }
+        } catch (e) {
+            console.error('Failed to load failures:', e);
+            failures = [];
         }
         updateFailureCount();
     }
     
-    function saveFailures() {
-        localStorage.setItem('ripListFailures', JSON.stringify(failures));
+    async function saveFailures() {
+        // Save is handled by individual add/delete operations
         updateFailureCount();
     }
     
@@ -406,19 +427,39 @@
         document.getElementById('failureCount').textContent = failures.length;
     }
     
-    function addFailure(failureData) {
+    async function addFailure(failureData) {
         failureData.id = Date.now();
         failureData.timestamp = new Date().toLocaleString();
-        failures.unshift(failureData);
-        if (failures.length > 50) failures = failures.slice(0, 50);
-        saveFailures();
+        
+        try {
+            const response = await fetch(n8nFailuresWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'add', failure: failureData })
+            });
+            if (response.ok) {
+                await loadFailures(); // Reload to get latest
+            }
+        } catch (e) {
+            console.error('Failed to add failure:', e);
+        }
     }
     
-    function deleteFailure(id) {
-        failures = failures.filter(f => f.id !== id);
-        saveFailures();
-        if (document.getElementById('failuresModal')) {
-            showFailuresModal();
+    async function deleteFailure(id) {
+        try {
+            const response = await fetch(n8nFailuresWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete', id: id })
+            });
+            if (response.ok) {
+                await loadFailures(); // Reload to get latest
+                if (document.getElementById('failuresModal')) {
+                    showFailuresModal();
+                }
+            }
+        } catch (e) {
+            console.error('Failed to delete failure:', e);
         }
     }
     
@@ -482,7 +523,9 @@
         alert(`Loaded failure from ${failure.timestamp}`);
     }
     
-    function showFailuresModal() {
+    async function showFailuresModal() {
+        await loadFailures(); // Refresh before showing
+        
         const existing = document.getElementById('failuresModal');
         if (existing) existing.remove();
         
@@ -535,11 +578,11 @@
             });
         });
         
-        document.querySelectorAll('.btn-delete').forEach(btn => {
-            btn.addEventListener('click', () => {
+        document.querySelectorAll('.btn-delete').forEach(async btn => {
+            btn.addEventListener('click', async () => {
                 const id = parseInt(btn.dataset.id);
-                deleteFailure(id);
-                showFailuresModal();
+                await deleteFailure(id);
+                await showFailuresModal(); // refresh
             });
         });
         
@@ -918,7 +961,7 @@
     const errorContainer = document.getElementById('errorContainer');
     const feedbackContainer = document.getElementById('feedbackContainer');
 
-    function saveFailureToLocalStorage(summaryText, timestamp, formData, url) {
+    async function saveFailureToCloud(summaryText, timestamp, formData, url) {
         const failureData = {
             id: Date.now(),
             timestamp: timestamp,
@@ -930,7 +973,7 @@
             summary: summaryText,
             pdfUrl: url
         };
-        addFailure(failureData);
+        await addFailure(failureData);
     }
     
     function showFeedbackSection(summaryText, timestamp, formData, pdfUrl) {
@@ -950,11 +993,17 @@
             overlay.style.display = 'none';
         });
         
-        newNoBtn.addEventListener('click', () => {
-            saveFailureToLocalStorage(summaryText, timestamp, formData, pdfUrl);
+        newNoBtn.addEventListener('click', async () => {
+            // Disable button and show loading
+            newNoBtn.disabled = true;
+            const originalText = newNoBtn.textContent;
+            newNoBtn.innerHTML = 'Saving... <span class="loading-small"></span>';
+            
+            await saveFailureToCloud(summaryText, timestamp, formData, pdfUrl);
+            
             feedbackContainer.style.display = 'none';
             overlay.style.display = 'none';
-            alert('Failure saved to local storage. Click the "Failures" button in the top right to view, load, or delete saved failures.');
+            alert('Failure saved to cloud. Click the "Failures" button in the top right to view, load, or delete saved failures.');
         });
     }
 
@@ -1061,7 +1110,7 @@
     document.body.addEventListener('dragover', (e) => e.preventDefault());
     document.body.addEventListener('drop', (e) => e.preventDefault());
     
-    // Initialize failures from localStorage
+    // Initialize failures from cloud
     loadFailures();
 </script>
 </body>
