@@ -385,8 +385,8 @@
 
     const n8nWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/106d0183-5d4a-4655-abe7-5aa10c4fad59';
     const n8nFailuresWebhookUrl = 'https://cfranklinatlx.app.n8n.cloud/webhook/a6baebcc-d239-40ce-8baa-9c0bf8761e6a';
-    const LITHO_USERNAME = 'vutek';
-    const LITHO_PASSWORD = 'Trigger13';
+    const LITHO_USERNAME = '';
+    const LITHO_PASSWORD = '';
     
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
@@ -419,7 +419,6 @@
     }
     
     async function saveFailures() {
-        // Save is handled by individual add/delete operations
         updateFailureCount();
     }
     
@@ -438,7 +437,7 @@
                 body: JSON.stringify({ action: 'add', failure: failureData })
             });
             if (response.ok) {
-                await loadFailures(); // Reload to get latest
+                await loadFailures();
             }
         } catch (e) {
             console.error('Failed to add failure:', e);
@@ -453,7 +452,7 @@
                 body: JSON.stringify({ action: 'delete', id: id })
             });
             if (response.ok) {
-                await loadFailures(); // Reload to get latest
+                await loadFailures();
                 if (document.getElementById('failuresModal')) {
                     showFailuresModal();
                 }
@@ -524,7 +523,7 @@
     }
     
     async function showFailuresModal() {
-        await loadFailures(); // Refresh before showing
+        await loadFailures();
         
         const existing = document.getElementById('failuresModal');
         if (existing) existing.remove();
@@ -582,7 +581,7 @@
             btn.addEventListener('click', async () => {
                 const id = parseInt(btn.dataset.id);
                 await deleteFailure(id);
-                await showFailuresModal(); // refresh
+                await showFailuresModal();
             });
         });
         
@@ -633,14 +632,11 @@
         return match ? match[1] : null;
     }
     
-    // UPDATED: fetchJobTicketPDF using CORS proxy
     async function fetchJobTicketPDF(jobNumber) {
-        const targetUrl = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
-        // Using corsproxy.io - a free CORS proxy that works with authentication
-        const proxyUrl = 'https://corsproxy.io/?';
+        const url = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
         const authString = btoa(`${LITHO_USERNAME}:${LITHO_PASSWORD}`);
         
-        const response = await fetch(proxyUrl + encodeURIComponent(targetUrl), {
+        const response = await fetch(url, {
             headers: { 
                 'Authorization': 'Basic ' + authString
             }
@@ -985,7 +981,6 @@
         const yesBtn = document.getElementById('feedbackYesBtn');
         const noBtn = document.getElementById('feedbackNoBtn');
         
-        // Remove old listeners by cloning and replacing
         const newYesBtn = yesBtn.cloneNode(true);
         const newNoBtn = noBtn.cloneNode(true);
         yesBtn.parentNode.replaceChild(newYesBtn, yesBtn);
@@ -997,9 +992,7 @@
         });
         
         newNoBtn.addEventListener('click', async () => {
-            // Disable button and show loading
             newNoBtn.disabled = true;
-            const originalText = newNoBtn.textContent;
             newNoBtn.innerHTML = 'Saving... <span class="loading-small"></span>';
             
             await saveFailureToCloud(summaryText, timestamp, formData, pdfUrl);
