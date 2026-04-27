@@ -675,54 +675,54 @@
     }
 
     function generateFDF(pageLines, topData) {
-        addDebugLog('generateFDF - topData', topData);
-        let fdf = `%FDF-1.2\n%âãÏÓ\n1 0 obj\n<< /FDF << /Fields [\n`;
-        
-        const now = new Date();
-        fdf += `<</T(Date5_af_date)/V(${escapeFDF(now.toLocaleString())})>>\n`;
-        fdf += `<</T(Ripped By)/V(${escapeFDF(topData.ripped_by)})>>\n`;
-        fdf += `<</T(Printer)/V(${escapeFDF(topData.printer)})>>\n`;
-        fdf += `<</T(Qty)/V(${escapeFDF(topData.quantity)})>>\n`;
-        fdf += `<</T(Mat  Size)/V(${escapeFDF(topData.material)})>>\n`;
-        fdf += `<</T(Due)/V(${escapeFDF(topData.due_date)})>>\n`;
-        fdf += `<</T(Job.Job)/V(${escapeFDF(topData.job_number)})>>\n`;
-        fdf += `<</T(Customer.Customer)/V(${escapeFDF(topData.customer)})>>\n`;
-        fdf += `<</T(Versions.Versions)/V(${escapeFDF(topData.version)})>>\n`;
-        fdf += `<</T(Laminate)/V(${topData.laminated ? 'Yes' : 'Off'})>>\n`;
-        
-        // Color match radio buttons
-        if (topData.color_match === 'Laser') {
-            fdf += `<</T(Laser)/V(Yes)>>\n<</T(Mini)/V(Off)>>\n`;
-        } else if (topData.color_match === 'Mini') {
-            fdf += `<</T(Mini)/V(Yes)>>\n<</T(Laser)/V(Off)>>\n`;
-        } else {
-            fdf += `<</T(Laser)/V(Off)>>\n<</T(Mini)/V(Off)>>\n`;
-        }
-        
-        // Print mode checkboxes
-        const printMode = topData.print_mode || '';
-        fdf += `<</T(4/0)/V(${printMode.includes('4/0') ? 'Yes' : 'Off'})>>\n`;
-        
-        // Zund cut
-        fdf += `<</T(Zund)/V(${topData.zund_cut ? 'Yes' : 'Off'})>>\n`;
-        
-        // Lines 1..48 from the paginated page (already in left‑column‑first order)
-        for (let i = 0; i < pageLines.length && i < 48; i++) {
-            fdf += `<</T(Line${i+1})/V(${escapeFDF(pageLines[i])})>>\n`;
-        }
-        // Fill remaining lines (if any) with empty strings
-        for (let i = pageLines.length; i < 48; i++) {
-            fdf += `<</T(Line${i+1})/V()>>\n`;
-        }
-        
-        // Additional fields (Run as Sets, etc.)
-        fdf += `<</T(Run as Sets)/V(Yes)>>\n`;
-        
-        fdf += `] >>\n>>\nendobj\nxref\n0 1\n0000000000 65535 f \n0000000000 00000 n \ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
-        addDebugLog('generateFDF - completed', `Lines in FDF: ${pageLines.length}`);
-        return fdf;
+    addDebugLog('generateFDF - topData', topData);
+    let fdf = `%FDF-1.2\n%âãÏÓ\n1 0 obj\n<< /FDF << /Fields [\n`;
+    
+    const now = new Date();
+    fdf += `<</T(Date5_af_date)/V(${escapeFDF(now.toLocaleString())})>>\n`;
+    fdf += `<</T(Ripped By)/V(${escapeFDF(topData.ripped_by)})>>\n`;
+    fdf += `<</T(Printer)/V(${escapeFDF(topData.printer)})>>\n`;
+    fdf += `<</T(Qty)/V(${escapeFDF(topData.quantity)})>>\n`;
+    fdf += `<</T(Mat  Size)/V(${escapeFDF(topData.material)})>>\n`;
+    fdf += `<</T(Due)/V(${escapeFDF(topData.due_date)})>>\n`;
+    
+    // Use simplified field names (no dots)
+    fdf += `<</T(Job)/V(${escapeFDF(topData.job_number)})>>\n`;
+    fdf += `<</T(Customer)/V(${escapeFDF(topData.customer)})>>\n`;
+    fdf += `<</T(Versions)/V(${escapeFDF(topData.version)})>>\n`;
+    
+    fdf += `<</T(Laminate)/V(${topData.laminated ? 'Yes' : 'Off'})>>\n`;
+    
+    // Color match radio buttons
+    if (topData.color_match === 'Laser') {
+        fdf += `<</T(Laser)/V(Yes)>>\n<</T(Mini)/V(Off)>>\n`;
+    } else if (topData.color_match === 'Mini') {
+        fdf += `<</T(Mini)/V(Yes)>>\n<</T(Laser)/V(Off)>>\n`;
+    } else {
+        fdf += `<</T(Laser)/V(Off)>>\n<</T(Mini)/V(Off)>>\n`;
     }
-
+    
+    // Print mode checkboxes
+    const printMode = topData.print_mode || '';
+    fdf += `<</T(4/0)/V(${printMode.includes('4/0') ? 'Yes' : 'Off'})>>\n`;
+    
+    // Zund cut
+    fdf += `<</T(Zund)/V(${topData.zund_cut ? 'Yes' : 'Off'})>>\n`;
+    
+    // Lines 1..48 from the paginated page
+    for (let i = 0; i < pageLines.length && i < 48; i++) {
+        fdf += `<</T(Line${i+1})/V(${escapeFDF(pageLines[i])})>>\n`;
+    }
+    for (let i = pageLines.length; i < 48; i++) {
+        fdf += `<</T(Line${i+1})/V()>>\n`;
+    }
+    
+    fdf += `<</T(Run as Sets)/V(Yes)>>\n`;
+    
+    fdf += `] >>\n>>\nendobj\nxref\n0 1\n0000000000 65535 f \n0000000000 00000 n \ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
+    addDebugLog('generateFDF - completed', `Lines in FDF: ${pageLines.length}`);
+    return fdf;
+}
     // --------------------------------------------------------------
     // UI and main submit
     // --------------------------------------------------------------
