@@ -464,8 +464,10 @@
     }
 
     function parsePDF(pdfText) {
+        console.log('parsePDF called, text length:', pdfText.length);
         const result = new Map();
         const sections = pdfText.split(/Version\s*\n/i);
+        console.log(`Found ${sections.length-1} sections`);
         for (let i = 1; i < sections.length; i++) {
             let section = sections[i];
             if (!section.trim()) continue;
@@ -492,6 +494,7 @@
                 }
             }
             if (!versionCode) continue;
+            console.log(`Version code: ${versionCode}`);
             const restOfSection = lines.slice(1).join('\n');
             let panelCount = 1;
             const panelMatch = restOfSection.match(/Printing\s+as\s+(\d+)\s+Panels?/i);
@@ -547,10 +550,12 @@
                 }
             }
         }
+        console.log('parsePDF result size:', result.size);
         return result;
     }
 
     function generateRIPList(formsArray, pdfData) {
+        console.log('generateRIPList called, formsArray:', formsArray, 'pdfData size:', pdfData.size);
         const fileNames = [];
         const versionsUsed = [];
         let firstFormInfo = null;
@@ -587,7 +592,10 @@
                 const versionCode = parts.length>=2 ? parts[1].toUpperCase() : '';
                 if (!versionCode) continue;
                 const versionInfo = pdfData.get(versionCode);
-                if (!versionInfo) continue;
+                if (!versionInfo) {
+                    console.warn(`No PDF data for version ${versionCode}`);
+                    continue;
+                }
                 let quantity = versionInfo.quantity;
                 let panelCount = versionInfo.panelCount;
                 const material = versionInfo.material;
@@ -641,6 +649,7 @@
             }
             previousFormNumber = formNumber;
         }
+        console.log(`Generated ${fileNames.length} file name entries`);
         return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
     }
 
@@ -672,6 +681,7 @@
             }
             pages.push({ lines: chunk.slice(), pageNumber: pages.length+1 });
         }
+        console.log(`Paginated into ${pages.length} pages`);
         return pages;
     }
 
@@ -775,6 +785,7 @@
             const content = await page.getTextContent();
             full += content.items.map(item => item.str).join(' ') + '\n';
         }
+        console.log('Extracted PDF text length:', full.length);
         return full;
     }
 
@@ -802,8 +813,6 @@
     });
 
     function createFormBlock(formType = 'default') {
-        // This is the exact same function from your original HTML (simplified here for brevity,
-        // but you must keep it identical to what you had before). I'll reproduce the original.
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
         const blockDiv = document.createElement('div');
         blockDiv.className = 'form-block';
@@ -1055,7 +1064,9 @@
             const { fileNames, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
             const pages = paginateRipList(fileNames);
 
-            if (!pages.length) throw new Error('No pages generated');
+            if (!pages.length) {
+                throw new Error(`No pages generated. fileNames length: ${fileNames.length}. Check console for details.`);
+            }
 
             // Use first page for FDF (you can extend later to multiple pages)
             const firstPageLines = pages[0].lines;  // array of 48 strings
