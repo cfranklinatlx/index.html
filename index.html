@@ -619,47 +619,36 @@
         return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
     }
 
+    // CORRECTED pagination – two columns (left column first, then right column)
     function paginateRipList(allFileNames) {
         const LINES_PER_PAGE = 48;
         const pages = [];
-        let currentBaseFileName = null;
-        
-        function isBaseFileName(entry) {
-            if (!entry || entry === '') return false;
-            if (/^x\d+$/i.test(entry)) return false;
-            if (/^\d{3}_\d+A$/.test(entry)) return false;
-            if (/^\d{3}\s+1A-\d+A\s+x\d+$/i.test(entry)) return false;
-            return true;
-        }
         
         for (let start = 0; start < allFileNames.length; start += LINES_PER_PAGE) {
-            let chunk = allFileNames.slice(start, start + LINES_PER_PAGE);
-            if (currentBaseFileName) {
-                const firstNonBlank = chunk.find(entry => entry !== '');
-                if (firstNonBlank && !isBaseFileName(firstNonBlank)) {
-                    chunk.unshift(currentBaseFileName);
-                    if (chunk.length > LINES_PER_PAGE) chunk = chunk.slice(0, LINES_PER_PAGE);
-                }
+            const chunk = allFileNames.slice(start, start + LINES_PER_PAGE);
+            
+            // Split into left and right halves
+            const mid = Math.ceil(chunk.length / 2);
+            const leftColumn = chunk.slice(0, mid);
+            const rightColumn = chunk.slice(mid);
+            
+            // Build interleaved page lines
+            const pageLines = new Array(LINES_PER_PAGE).fill('');
+            for (let i = 0; i < leftColumn.length; i++) {
+                pageLines[i * 2] = leftColumn[i];       // Line1, Line3, Line5...
             }
-            for (let j = chunk.length - 1; j >= 0; j--) {
-                if (isBaseFileName(chunk[j])) {
-                    currentBaseFileName = chunk[j];
-                    break;
-                }
+            for (let i = 0; i < rightColumn.length; i++) {
+                pageLines[i * 2 + 1] = rightColumn[i]; // Line2, Line4, Line6...
             }
             
-            // Pad to exactly 48 lines (required for two‑column layout)
-            while (chunk.length < LINES_PER_PAGE) chunk.push('');
-            pages.push({ lines: chunk.slice(), pageNumber: pages.length + 1 });
+            pages.push({ lines: pageLines, pageNumber: pages.length + 1 });
         }
         addDebugLog('paginateRipList - pages', pages.length);
         if (pages.length > 0) addDebugLog('paginateRipList - first page lines (first 15)', pages[0].lines.slice(0, 15));
         return pages;
     }
 
-    // --------------------------------------------------------------
     // PDF text extraction (preserves line breaks)
-    // --------------------------------------------------------------
     async function extractPdfText(file) {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -682,9 +671,7 @@
         return fullText;
     }
 
-    // --------------------------------------------------------------
-    // FDF generation – matches PDF.co field mapping exactly
-    // --------------------------------------------------------------
+    // FDF generation – matches PDF field names exactly
     function escapeFDF(s) {
         if (s === undefined || s === null) return '';
         return String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -706,7 +693,7 @@
         fdf += `<</T(Versions.Versions)/V(${escapeFDF(topData.version)})>>\n`;
         fdf += `<</T(Laminate)/V(${topData.laminated ? 'Yes' : 'Off'})>>\n`;
         
-        // Color match radio buttons (Laser / Mini)
+        // Color match radio buttons
         if (topData.color_match === 'Laser') {
             fdf += `<</T(Laser)/V(Yes)>>\n<</T(Mini)/V(Off)>>\n`;
         } else if (topData.color_match === 'Mini') {
@@ -715,7 +702,7 @@
             fdf += `<</T(Laser)/V(Off)>>\n<</T(Mini)/V(Off)>>\n`;
         }
         
-        // Print mode checkboxes (example: 4/0)
+        // Print mode checkboxes
         const printMode = topData.print_mode || '';
         fdf += `<</T(4/0)/V(${printMode.includes('4/0') ? 'Yes' : 'Off'})>>\n`;
         
@@ -731,7 +718,7 @@
             fdf += `<</T(Line${i+1})/V()>>\n`;
         }
         
-        // Optional fields (Run as Sets, Inline, etc.) – you can expand as needed
+        // Additional fields (Run as Sets, etc.)
         fdf += `<</T(Run as Sets)/V(Yes)>>\n`;
         
         fdf += `] >>\n>>\nendobj\nxref\n0 1\n0000000000 65535 f \n0000000000 00000 n \ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
@@ -952,7 +939,7 @@
                 due_date: firstFormInfo?.dueDate || '',
                 laminated: firstFormInfo?.laminated || false,
                 zund_cut: firstFormInfo?.zundCut || false,
-                version: versionsUsed.join(', ')   // Only versions from submitted forms
+                version: versionsUsed.join(', ')
             };
             
             const fdfContent = generateFDF(firstPageLines, topData);
