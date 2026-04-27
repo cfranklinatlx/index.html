@@ -223,35 +223,35 @@
             vertical-align: middle;
         }
 
-        /* Debug Panel Styles */
         .debug-panel {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            width: 400px;
-            max-height: 300px;
+            width: 450px;
+            max-height: 350px;
             background: #1e1e1e;
             color: #d4d4d4;
             border-radius: 8px;
             overflow: hidden;
             z-index: 2002;
             font-family: monospace;
-            font-size: 11px;
+            font-size: 10px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             display: none;
         }
         .debug-header {
             background: #007acc;
-            padding: 8px 12px;
+            padding: 6px 10px;
             cursor: pointer;
             display: flex;
             justify-content: space-between;
             font-weight: bold;
+            font-size: 11px;
         }
         .debug-content {
-            padding: 8px;
+            padding: 6px;
             overflow-y: auto;
-            max-height: 260px;
+            max-height: 310px;
             white-space: pre-wrap;
             word-break: break-word;
         }
@@ -392,7 +392,7 @@
     function updateDebugPanel() {
         const container = document.getElementById('debugContent');
         if (container) {
-            container.innerHTML = debugLogs.map(log => `<div><strong>${log.timestamp} - ${log.label}</strong><br><pre style="margin:2px 0 8px 0; font-size:10px;">${log.data.substring(0, 500)}</pre></div>`).join('');
+            container.innerHTML = debugLogs.map(log => `<div><strong>${log.timestamp} - ${log.label}</strong><br><pre style="margin:2px 0 8px 0; font-size:9px; white-space:pre-wrap;">${log.data.substring(0, 600)}</pre></div>`).join('');
         }
     }
     document.getElementById('debugBtn')?.addEventListener('click', () => {
@@ -476,10 +476,12 @@
         addDebugLog('parsePDF - started', `Text length: ${pdfText.length}`);
         const result = new Map();
         
-        // Extract customer name
+        // FIXED: Extract customer name - take second line after Customer (skip the date)
         let extractedCustomer = '';
-        const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)/);
-        if (customerMatch) extractedCustomer = customerMatch[1].trim();
+        const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)\n\s*([^\n]+)/);
+        if (customerMatch) {
+            extractedCustomer = customerMatch[2].trim();
+        }
         addDebugLog('parsePDF - customer', extractedCustomer);
         
         // Extract job number
@@ -547,11 +549,9 @@
             
             if (mainQuantity > 0 || panelCount > 1) {
                 result.set(versionCode, { quantity: mainQuantity, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
-                addDebugLog(`parsePDF - version ${versionCode}`, { quantity: mainQuantity, panelCount, material, dueDate });
             }
             for (const sv of subVersions) {
                 result.set(sv.code, { quantity: sv.qty, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
-                addDebugLog(`parsePDF - sub-version ${sv.code}`, { quantity: sv.qty, panelCount });
             }
         }
         addDebugLog('parsePDF - result size', result.size);
@@ -633,16 +633,15 @@
                 if (isMultiFileForm) {
                     fileNames.push(`${formNumberPadded} x${quantity}`);
                 } else if (formType === 'billboard') {
-                    if (panelCount > 1) {
-                        for (let repeat = 0; repeat < quantity; repeat++) {
-                            for (let panel = 1; panel <= panelCount; panel++) {
-                                fileNames.push(`${formNumberPadded}_A${panel}`);
-                            }
+                    // FIXED: Billboard always lists each panel individually
+                    // If panelCount = 1, repeat that single panel 'quantity' times
+                    // If panelCount > 1, repeat the full sequence 'quantity' times
+                    for (let repeat = 0; repeat < quantity; repeat++) {
+                        for (let panel = 1; panel <= panelCount; panel++) {
+                            fileNames.push(`${formNumberPadded}_A${panel}`);
                         }
-                        addDebugLog(`generateRIPList - billboard ${versionCode}`, { quantity, panelCount, panelSequence: `${panelCount} panels x ${quantity} repeats` });
-                    } else {
-                        fileNames.push(`x${quantity}`);
                     }
+                    addDebugLog(`generateRIPList - billboard ${versionCode}`, { quantity, panelCount, totalLines: quantity * panelCount });
                 } else if (formType === 'spectacular') {
                     const tilesPerRow = version.tilesPerRow || [];
                     if (tilesPerRow.length) {
@@ -669,7 +668,7 @@
             previousFormNumber = formNumber;
         }
         addDebugLog('generateRIPList - total file names', fileNames.length);
-        if (fileNames.length < 50) addDebugLog('generateRIPList - first 10 file names', fileNames.slice(0, 10));
+        if (fileNames.length < 50) addDebugLog('generateRIPList - first 20 file names', fileNames.slice(0, 20));
         return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
     }
 
@@ -708,7 +707,7 @@
             pages.push({ lines: chunk.slice(), pageNumber: pages.length + 1 });
         }
         addDebugLog('paginateRipList - pages', pages.length);
-        if (pages.length > 0) addDebugLog('paginateRipList - first page lines (first 10)', pages[0].lines.slice(0, 10));
+        if (pages.length > 0) addDebugLog('paginateRipList - first page lines (first 15)', pages[0].lines.slice(0, 15));
         return pages;
     }
 
@@ -742,7 +741,8 @@
     }
 
     function generateFDF(pageLines, topData) {
-        addDebugLog('generateFDF - topData', topData);
+        addDebugLog('generateFDF - topData customer', topData.customer);
+        addDebugLog('generateFDF - topData version', topData.version);
         let fdf = `%FDF-1.2\n%âãÏÓ\n1 0 obj\n<< /FDF << /Fields [\n`;
         
         const now = new Date();
@@ -973,12 +973,11 @@
         try {
             const pdfText = await extractPdfText(fileInput.files[0]);
             const pdfData = parsePDF(pdfText);
-            const { fileNames, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
+            const { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
             const pages = paginateRipList(fileNames);
             if (!pages.length) throw new Error('No pages generated');
             
             const firstPageLines = pages[0].lines;
-            const allVersionsList = Array.from(pdfData.keys());
             
             const topData = {
                 customer: window.extractedPdfMeta?.customer || '',
@@ -993,7 +992,7 @@
                 due_date: firstFormInfo?.dueDate || '',
                 laminated: firstFormInfo?.laminated || false,
                 zund_cut: firstFormInfo?.zundCut || false,
-                version: allVersionsList.join(', ')
+                version: versionsUsed.join(', ')  // FIXED: Use only versions from webhook forms
             };
             
             const fdfContent = generateFDF(firstPageLines, topData);
