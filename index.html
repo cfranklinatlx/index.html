@@ -627,21 +627,15 @@
     for (let start = 0; start < allFileNames.length; start += LINES_PER_PAGE) {
         const chunk = allFileNames.slice(start, start + LINES_PER_PAGE);
         
-        // Split into two halves: left column (odd lines) and right column (even lines)
-        const mid = Math.ceil(chunk.length / 2);
-        const leftColumn = chunk.slice(0, mid);
-        const rightColumn = chunk.slice(mid);
-        
-        // Build pageLines array of length LINES_PER_PAGE
         const pageLines = new Array(LINES_PER_PAGE).fill('');
         
-        // Fill odd indices (0,2,4...46) with left column items
-        for (let i = 0; i < leftColumn.length; i++) {
-            pageLines[i * 2] = leftColumn[i];
+        // Fill odd indices (0,2,4...) with the first 24 items
+        for (let i = 0; i < 24 && i < chunk.length; i++) {
+            pageLines[i * 2] = chunk[i];
         }
-        // Fill even indices (1,3,5...47) with right column items
-        for (let i = 0; i < rightColumn.length; i++) {
-            pageLines[i * 2 + 1] = rightColumn[i];
+        // Fill even indices (1,3,5...) with the next 24 items
+        for (let i = 24; i < 48 && i < chunk.length; i++) {
+            pageLines[(i - 24) * 2 + 1] = chunk[i];
         }
         
         pages.push({ lines: pageLines, pageNumber: pages.length + 1 });
