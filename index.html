@@ -174,10 +174,7 @@
 
         .failures-modal {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.5);
             display: flex;
             justify-content: center;
@@ -330,7 +327,7 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     // --------------------------------------------------------------
-    // 1.  Local failures storage (unchanged)
+    // 1.  Local failures storage
     // --------------------------------------------------------------
     let failures = [];
 
@@ -456,7 +453,7 @@
     document.getElementById('failuresBtn').addEventListener('click', showFailuresModal);
 
     // --------------------------------------------------------------
-    // 2.  RIP list generation logic (exactly your code)
+    // 2.  Your original RIP list generation logic (no changes)
     // --------------------------------------------------------------
     function isValidVersionCode(str) {
         if (str.length > 4) return false;
@@ -464,10 +461,8 @@
     }
 
     function parsePDF(pdfText) {
-        console.log('parsePDF called, text length:', pdfText.length);
         const result = new Map();
         const sections = pdfText.split(/Version\s*\n/i);
-        console.log(`Found ${sections.length-1} sections`);
         for (let i = 1; i < sections.length; i++) {
             let section = sections[i];
             if (!section.trim()) continue;
@@ -494,7 +489,6 @@
                 }
             }
             if (!versionCode) continue;
-            console.log(`Version code: ${versionCode}`);
             const restOfSection = lines.slice(1).join('\n');
             let panelCount = 1;
             const panelMatch = restOfSection.match(/Printing\s+as\s+(\d+)\s+Panels?/i);
@@ -550,12 +544,10 @@
                 }
             }
         }
-        console.log('parsePDF result size:', result.size);
         return result;
     }
 
     function generateRIPList(formsArray, pdfData) {
-        console.log('generateRIPList called, formsArray:', formsArray, 'pdfData size:', pdfData.size);
         const fileNames = [];
         const versionsUsed = [];
         let firstFormInfo = null;
@@ -592,10 +584,7 @@
                 const versionCode = parts.length>=2 ? parts[1].toUpperCase() : '';
                 if (!versionCode) continue;
                 const versionInfo = pdfData.get(versionCode);
-                if (!versionInfo) {
-                    console.warn(`No PDF data for version ${versionCode}`);
-                    continue;
-                }
+                if (!versionInfo) continue;
                 let quantity = versionInfo.quantity;
                 let panelCount = versionInfo.panelCount;
                 const material = versionInfo.material;
@@ -649,7 +638,6 @@
             }
             previousFormNumber = formNumber;
         }
-        console.log(`Generated ${fileNames.length} file name entries`);
         return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
     }
 
@@ -681,36 +669,63 @@
             }
             pages.push({ lines: chunk.slice(), pageNumber: pages.length+1 });
         }
-        console.log(`Paginated into ${pages.length} pages`);
         return pages;
     }
 
     // --------------------------------------------------------------
-    // 3.  FDF generation (maps all fields including Laser/Mini/Zund)
+    // 3.  Improved PDF text extraction (preserves line breaks)
     // --------------------------------------------------------------
-    function generateFDF(pageLines, topData) {
-        function escape(s) {
-            if (s === undefined || s === null) return '';
-            return String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    async function extractPdfText(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent({ normalizeWhitespace: false });
+            let lastY = null;
+            let pageText = '';
+            for (const item of content.items) {
+                if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+                    pageText += '\n';
+                }
+                pageText += item.str;
+                lastY = item.transform[5];
+            }
+            fullText += pageText + '\n\n';  // extra newline between pages
         }
+        // Normalize line endings and trim excessive spaces
+        fullText = fullText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ');
+        console.log('Extracted PDF text length:', fullText.length);
+        console.log('First 500 chars:', fullText.substring(0, 500));
+        return fullText;
+    }
 
+    // --------------------------------------------------------------
+    // 4.  FDF generation (AppleScript-ready)
+    // --------------------------------------------------------------
+    function escapeFDF(s) {
+        if (s === undefined || s === null) return '';
+        return String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+    }
+
+    function generateFDF(pageLines, topData) {
         let fdf = `%FDF-1.2\n%âãÏÓ\n1 0 obj\n<< /FDF << /Fields [\n`;
 
         // Date/Time
         const now = new Date();
-        fdf += `<</T(Date5_af_date)/V(${escape(now.toLocaleString())})>>\n`;
+        fdf += `<</T(Date5_af_date)/V(${escapeFDF(now.toLocaleString())})>>\n`;
 
         // Basic text fields
-        fdf += `<</T(Ripped By)/V(${escape(topData.ripped_by)})>>\n`;
-        fdf += `<</T(Printer)/V(${escape(topData.printer)})>>\n`;
-        fdf += `<</T(Qty)/V(${escape(topData.quantity)})>>\n`;
-        fdf += `<</T(Mat  Size)/V(${escape((topData.material||'') + (topData.size ? ' '+topData.size : ''))})>>\n`;
-        fdf += `<</T(Due)/V(${escape(topData.due_date)})>>\n`;
-        fdf += `<</T(Job.Job)/V(${escape(topData.job_number)})>>\n`;
-        fdf += `<</T(Customer.Customer)/V(${escape(topData.customer)})>>\n`;
-        fdf += `<</T(Versions.Versions)/V(${escape(topData.version)})>>\n`;
+        fdf += `<</T(Ripped By)/V(${escapeFDF(topData.ripped_by)})>>\n`;
+        fdf += `<</T(Printer)/V(${escapeFDF(topData.printer)})>>\n`;
+        fdf += `<</T(Qty)/V(${escapeFDF(topData.quantity)})>>\n`;
+        fdf += `<</T(Mat  Size)/V(${escapeFDF(topData.material + (topData.size ? ' '+topData.size : ''))})>>\n`;
+        fdf += `<</T(Due)/V(${escapeFDF(topData.due_date)})>>\n`;
+        fdf += `<</T(Job.Job)/V(${escapeFDF(topData.job_number)})>>\n`;
+        fdf += `<</T(Customer.Customer)/V(${escapeFDF(topData.customer)})>>\n`;
+        fdf += `<</T(Versions.Versions)/V(${escapeFDF(topData.version)})>>\n`;
 
-        // Laminate (text field)
+        // Laminate
         fdf += `<</T(Laminate)/V(${topData.laminated ? 'Yes' : 'Off'})>>\n`;
 
         // Radio buttons: Laser / Mini
@@ -725,30 +740,28 @@
             fdf += `<</T(Mini)/V(Off)>>\n`;
         }
 
-        // Print mode checkboxes (add others if needed)
+        // Print mode checkbox (4/0)
         const printMode = topData.print_mode || '';
         fdf += `<</T(4/0)/V(${printMode.includes('4/0') ? 'Yes' : 'Off'})>>\n`;
-        // (You can add 4+4/0, 4+1/0, etc. similarly)
 
         // Zund cut
         fdf += `<</T(Zund)/V(${topData.zund_cut ? 'Yes' : 'Off'})>>\n`;
 
         // Lines 1..48 from the page
         for (let i = 0; i < pageLines.length && i < 48; i++) {
-            fdf += `<</T(Line${i+1})/V(${escape(pageLines[i])})>>\n`;
+            fdf += `<</T(Line${i+1})/V(${escapeFDF(pageLines[i])})>>\n`;
         }
-        // Fill remaining empty lines if page has fewer than 48
+        // Fill remaining empty lines
         for (let i = pageLines.length; i < 48; i++) {
             fdf += `<</T(Line${i+1})/V()>>\n`;
         }
 
         fdf += `] >>\n>>\nendobj\nxref\n0 1\n0000000000 65535 f \n0000000000 00000 n \ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
-
         return fdf;
     }
 
     // --------------------------------------------------------------
-    // 4.  UI helpers and main submit
+    // 5.  UI helpers and main submit
     // --------------------------------------------------------------
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
@@ -775,19 +788,6 @@
 
     function cleanFileName(fileName) { return fileName.replace(/\.pdf$/i,''); }
     function extractJobNumber(fileName) { const m = fileName.match(/^(\d{6})/); return m ? m[1] : null; }
-
-    async function extractPdfText(file) {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let full = '';
-        for (let i=1; i<=pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            full += content.items.map(item => item.str).join(' ') + '\n';
-        }
-        console.log('Extracted PDF text length:', full.length);
-        return full;
-    }
 
     function autoFetchAndSetPdf(jobNumber) { /* disabled */ console.log('Auto‑fetch disabled'); }
     function updatePdfButtons() { /* placeholder */ }
@@ -1064,12 +1064,9 @@
             const { fileNames, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
             const pages = paginateRipList(fileNames);
 
-            if (!pages.length) {
-                throw new Error(`No pages generated. fileNames length: ${fileNames.length}. Check console for details.`);
-            }
+            if (!pages.length) throw new Error('No pages generated – check console for PDF text');
 
-            // Use first page for FDF (you can extend later to multiple pages)
-            const firstPageLines = pages[0].lines;  // array of 48 strings
+            const firstPageLines = pages[0].lines;
             const topData = {
                 customer: (firstFormInfo?.material || '').split(' - ')[0] || '',
                 job_number: jobNumber,
@@ -1078,7 +1075,7 @@
                 color_match: colorMatch,
                 quantity: (hasMultipleVersionsInAnyForm || firstFormInfo?.isMultiFile) ? '' : (firstFormInfo?.quantity || ''),
                 material: firstFormInfo?.material || '',
-                size: '',   // you can add size if needed
+                size: '',
                 print_mode: firstFormInfo?.printMode || '',
                 due_date: firstFormInfo?.dueDate || '',
                 laminated: firstFormInfo?.laminated || false,
