@@ -3,7 +3,7 @@
 <head>
     <title>RIP List Form</title>
     <style>
-        body { font-family: sans-serif; max-width: 900px; margin: 20px auto; padding: 20px; }
+        body { font-family: sans-serif; max-width: 1000px; margin: 20px auto; padding: 20px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 5px; font-weight: bold; }
         input, select { width: 100%; padding: 8px; box-sizing: border-box; }
@@ -222,11 +222,66 @@
             margin-left: 8px;
             vertical-align: middle;
         }
+
+        /* Debug Panel Styles */
+        .debug-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 400px;
+            max-height: 300px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 2002;
+            font-family: monospace;
+            font-size: 11px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: none;
+        }
+        .debug-header {
+            background: #007acc;
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+        }
+        .debug-content {
+            padding: 8px;
+            overflow-y: auto;
+            max-height: 260px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .debug-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #007acc;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 11px;
+            z-index: 2003;
+        }
     </style>
 </head>
 <body>
 
 <button id="failuresBtn" class="failures-btn">📋 Failures (<span id="failureCount">0</span>)</button>
+<button id="debugBtn" class="debug-btn">🐛 Debug</button>
+
+<div id="debugPanel" class="debug-panel">
+    <div class="debug-header">
+        <span>RIP List Debug Log</span>
+        <span id="closeDebug" style="cursor:pointer;">✖</span>
+    </div>
+    <div id="debugContent" class="debug-content">Waiting for debug data...</div>
+</div>
 
 <h2>RIP List Form</h2>
 
@@ -326,46 +381,41 @@
 <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    // --------------------------------------------------------------
-    // 1.  Local failures storage
-    // --------------------------------------------------------------
-    let failures = [];
-
-    function loadFailures() {
-        const stored = localStorage.getItem('ripListFailures');
-        if (stored) {
-            try { failures = JSON.parse(stored); } catch(e) { failures = []; }
+    // Debug logging
+    let debugLogs = [];
+    function addDebugLog(label, data) {
+        const logEntry = { timestamp: new Date().toLocaleTimeString(), label, data: typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data) };
+        debugLogs.unshift(logEntry);
+        if (debugLogs.length > 50) debugLogs.pop();
+        updateDebugPanel();
+    }
+    function updateDebugPanel() {
+        const container = document.getElementById('debugContent');
+        if (container) {
+            container.innerHTML = debugLogs.map(log => `<div><strong>${log.timestamp} - ${log.label}</strong><br><pre style="margin:2px 0 8px 0; font-size:10px;">${log.data.substring(0, 500)}</pre></div>`).join('');
         }
-        updateFailureCount();
     }
-    function saveFailures() {
-        localStorage.setItem('ripListFailures', JSON.stringify(failures));
-        updateFailureCount();
-    }
-    function updateFailureCount() {
-        document.getElementById('failureCount').textContent = failures.length;
-    }
-    function addFailure(failureData) {
-        failureData.id = Date.now();
-        failureData.timestamp = new Date().toLocaleString();
-        failures.unshift(failureData);
-        if (failures.length > 50) failures = failures.slice(0,50);
-        saveFailures();
-        if (document.getElementById('failuresModal')) showFailuresModal();
-    }
-    function deleteFailure(id) {
-        failures = failures.filter(f => f.id !== id);
-        saveFailures();
-        if (document.getElementById('failuresModal')) showFailuresModal();
-    }
+    document.getElementById('debugBtn')?.addEventListener('click', () => {
+        const panel = document.getElementById('debugPanel');
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('closeDebug')?.addEventListener('click', () => {
+        document.getElementById('debugPanel').style.display = 'none';
+    });
+
+    // Failures storage
+    let failures = [];
+    function loadFailures() { const stored = localStorage.getItem('ripListFailures'); if (stored) { try { failures = JSON.parse(stored); } catch(e) { failures = []; } } updateFailureCount(); }
+    function saveFailures() { localStorage.setItem('ripListFailures', JSON.stringify(failures)); updateFailureCount(); }
+    function updateFailureCount() { document.getElementById('failureCount').textContent = failures.length; }
+    function addFailure(failureData) { failureData.id = Date.now(); failureData.timestamp = new Date().toLocaleString(); failures.unshift(failureData); if (failures.length > 50) failures = failures.slice(0,50); saveFailures(); if (document.getElementById('failuresModal')) showFailuresModal(); }
+    function deleteFailure(id) { failures = failures.filter(f => f.id !== id); saveFailures(); if (document.getElementById('failuresModal')) showFailuresModal(); }
     function loadFailureIntoForm(failure) {
         document.getElementById('rippedBy').value = failure.rippedBy || '';
         document.getElementById('printer').value = failure.printer || '5R1';
         document.getElementById('colorMatch').value = failure.colorMatch || 'Laser';
-
         const container = document.getElementById('formsContainer');
         while (container.firstChild) container.removeChild(container.firstChild);
-
         if (failure.forms && failure.forms.length) {
             failure.forms.forEach((form, idx) => {
                 const newBlock = createFormBlock(form.type || 'default');
@@ -376,29 +426,20 @@
                     qtyInput.dispatchEvent(new Event('input'));
                     setTimeout(() => {
                         let inputs;
-                        if (form.type === 'default' || form.type === 'billboard')
-                            inputs = newBlock.querySelectorAll('.defaultFileName');
-                        else if (form.type === 'spectacular')
-                            inputs = newBlock.querySelectorAll('.specFileName');
-                        if (inputs) {
-                            versions.forEach((v,i) => { if(inputs[i]) inputs[i].value = v.fileName; });
-                        }
+                        if (form.type === 'default' || form.type === 'billboard') inputs = newBlock.querySelectorAll('.defaultFileName');
+                        else if (form.type === 'spectacular') inputs = newBlock.querySelectorAll('.specFileName');
+                        if (inputs) { versions.forEach((v,i) => { if(inputs[i]) inputs[i].value = v.fileName; }); }
                         if (form.type === 'spectacular' && versions.length) {
                             versions.forEach((v, vIdx) => {
                                 const tileInputs = newBlock.querySelectorAll(`.specTileCount[data-version="${vIdx+1}"]`);
-                                if (tileInputs.length && v.tilesPerRow) {
-                                    tileInputs.forEach((t, tIdx) => { t.value = v.tilesPerRow[tIdx]; });
-                                }
+                                if (tileInputs.length && v.tilesPerRow) { tileInputs.forEach((t, tIdx) => { t.value = v.tilesPerRow[tIdx]; }); }
                             });
                         }
                     }, 100);
                 }
             });
-        } else {
-            if (!document.getElementById('formsContainer').children.length) createFormBlock('default');
-        }
-        if (failure.jobNumber && failure.jobNumber !== 'Unknown')
-            autoFetchAndSetPdf(failure.jobNumber);
+        } else { if (!document.getElementById('formsContainer').children.length) createFormBlock('default'); }
+        if (failure.jobNumber && failure.jobNumber !== 'Unknown') autoFetchAndSetPdf(failure.jobNumber);
         alert(`Loaded failure from ${failure.timestamp}`);
     }
     function showFailuresModal() {
@@ -412,179 +453,162 @@
         else {
             items = failures.map(f => `
                 <div class="failure-item">
-                    <div class="failure-header">
-                        <strong>${f.jobNumber || 'Unknown Job'}</strong>
-                        <span class="failure-time">${f.timestamp}</span>
-                    </div>
-                    <div class="failure-header">
-                        <span>Ripped: ${f.rippedBy || '?'} | Printer: ${f.printer || '?'} | Color: ${f.colorMatch || '?'}</span>
-                        <div class="failure-buttons">
-                            <button class="btn-load" data-id="${f.id}">Load</button>
-                            <button class="btn-delete" data-id="${f.id}">Delete</button>
-                        </div>
-                    </div>
+                    <div class="failure-header"><strong>${f.jobNumber || 'Unknown Job'}</strong><span class="failure-time">${f.timestamp}</span></div>
+                    <div class="failure-header"><span>Ripped: ${f.rippedBy || '?'} | Printer: ${f.printer || '?'} | Color: ${f.colorMatch || '?'}</span>
+                    <div class="failure-buttons"><button class="btn-load" data-id="${f.id}">Load</button><button class="btn-delete" data-id="${f.id}">Delete</button></div></div>
                     <details><summary>Show details</summary><pre style="font-size:10px; overflow-x:auto;">${JSON.stringify(f.forms,null,2).substring(0,500)}${JSON.stringify(f.forms,null,2).length>500?'...':''}</pre></details>
-                </div>
-            `).join('');
+                </div>`).join('');
         }
-        modal.innerHTML = `
-            <div class="failures-card">
-                <h3>📋 Saved Failures</h3>
-                <div id="failuresList">${items}</div>
-                <button id="closeFailuresBtn" class="btn-close-failures">Close</button>
-            </div>
-        `;
+        modal.innerHTML = `<div class="failures-card"><h3>📋 Saved Failures</h3><div id="failuresList">${items}</div><button id="closeFailuresBtn" class="btn-close-failures">Close</button></div>`;
         document.body.appendChild(modal);
-        document.querySelectorAll('.btn-load').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = parseInt(btn.dataset.id);
-                const failure = failures.find(f => f.id === id);
-                if (failure) { loadFailureIntoForm(failure); modal.remove(); }
-            });
-        });
-        document.querySelectorAll('.btn-delete').forEach(btn => {
-            btn.addEventListener('click', () => {
-                deleteFailure(parseInt(btn.dataset.id));
-                showFailuresModal();
-            });
-        });
+        document.querySelectorAll('.btn-load').forEach(btn => { btn.addEventListener('click', () => { const id = parseInt(btn.dataset.id); const failure = failures.find(f => f.id === id); if (failure) { loadFailureIntoForm(failure); modal.remove(); } }); });
+        document.querySelectorAll('.btn-delete').forEach(btn => { btn.addEventListener('click', () => { deleteFailure(parseInt(btn.dataset.id)); showFailuresModal(); }); });
         document.getElementById('closeFailuresBtn').addEventListener('click', () => modal.remove());
     }
     document.getElementById('failuresBtn').addEventListener('click', showFailuresModal);
 
     // --------------------------------------------------------------
-    // 2.  Your original RIP list generation logic (no changes)
+    // RIP list generation logic
     // --------------------------------------------------------------
-    function isValidVersionCode(str) {
-        if (str.length > 4) return false;
-        return /^[A-Z][0-9]?[0-9]?$/i.test(str);
-    }
+    function isValidVersionCode(str) { if (str.length > 4) return false; return /^[A-Z][0-9]?[0-9]?$/i.test(str); }
 
     function parsePDF(pdfText) {
+        addDebugLog('parsePDF - started', `Text length: ${pdfText.length}`);
         const result = new Map();
+        
+        // Extract customer name
+        let extractedCustomer = '';
+        const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)/);
+        if (customerMatch) extractedCustomer = customerMatch[1].trim();
+        addDebugLog('parsePDF - customer', extractedCustomer);
+        
+        // Extract job number
+        let extractedJobNo = '';
+        const jobMatch = pdfText.match(/JobNo\s*\n\s*(\d{5,6})/);
+        if (jobMatch) extractedJobNo = jobMatch[1];
+        addDebugLog('parsePDF - job number', extractedJobNo);
+        
+        window.extractedPdfMeta = { customer: extractedCustomer, jobNumber: extractedJobNo };
+        
         const sections = pdfText.split(/Version\s*\n/i);
+        addDebugLog('parsePDF - sections found', sections.length - 1);
+        
         for (let i = 1; i < sections.length; i++) {
             let section = sections[i];
             if (!section.trim()) continue;
             section = section.trimStart();
             const lines = section.split('\n');
             const firstLine = lines[0].trim();
+            
             let versionCode = '';
-            const versionPatternMatch = firstLine.match(/VERSION\s+([A-Z0-9]+)\s*[: -]/i);
-            if (versionPatternMatch) versionCode = versionPatternMatch[1].toUpperCase();
+            const versionMatch = firstLine.match(/^([A-Z0-9]+)_/i);
+            if (versionMatch) versionCode = versionMatch[1].toUpperCase();
             else {
-                const filenameMatch = firstLine.match(/^\d{6}_([A-Z0-9]+)_/i);
-                if (filenameMatch) versionCode = filenameMatch[1].toUpperCase();
-                else {
-                    const simpleMatch = firstLine.match(/^([A-Z0-9]+)_/i);
-                    if (simpleMatch) versionCode = simpleMatch[1].toUpperCase();
-                    else {
-                        const letterMatch = firstLine.match(/^([A-Z][0-9]?[0-9]?)\b/i);
-                        if (letterMatch) versionCode = letterMatch[1].toUpperCase();
-                        else {
-                            const fallbackMatch = firstLine.match(/^([A-Z0-9]+)/i);
-                            if (fallbackMatch) versionCode = fallbackMatch[1].toUpperCase();
-                        }
-                    }
-                }
+                const fallback = firstLine.match(/^([A-Z0-9]+)/i);
+                if (fallback) versionCode = fallback[1].toUpperCase();
             }
             if (!versionCode) continue;
+            
             const restOfSection = lines.slice(1).join('\n');
+            
             let panelCount = 1;
             const panelMatch = restOfSection.match(/Printing\s+as\s+(\d+)\s+Panels?/i);
-            if (panelMatch) panelCount = parseInt(panelMatch[1],10);
+            if (panelMatch) panelCount = parseInt(panelMatch[1], 10);
+            
             const material = restOfSection.match(/Stock:\s*([^\n]+)/)?.[1]?.trim() || '';
-            const dueDate = restOfSection.match(/Due:\s*([^\n]+)/)?.[1]?.trim() || '';
+            
+            let dueDate = '';
+            const dueMatch = restOfSection.match(/Due:\s*([^\n]+)/);
+            if (dueMatch) {
+                let rawDue = dueMatch[1].trim();
+                const bIndex = rawDue.indexOf('B');
+                dueDate = bIndex > 0 ? rawDue.substring(0, bIndex).trim() : rawDue;
+            }
+            
             const printMode = restOfSection.match(/(\d+\s+Roll\s*\(UV ink\)[^\n]*)/i)?.[1]?.trim() ||
                               restOfSection.match(/(\d+\s+Flatbed Sheet[^\n]*)/i)?.[1]?.trim() || '';
+            
             const laminated = /Laminate/i.test(restOfSection);
             const zundCut = /Zund/i.test(restOfSection);
+            
             let mainQuantity = 0;
             const rollMatch = restOfSection.match(/(\d+)\s+Roll\s*\(UV ink\)/i);
             const sheetMatch = restOfSection.match(/(\d+)\s+Flatbed Sheet/i);
-            if (rollMatch) mainQuantity = parseInt(rollMatch[1],10);
-            else if (sheetMatch) mainQuantity = parseInt(sheetMatch[1],10);
-            else if (restOfSection.match(/1\s+Prep Only/i)) mainQuantity = 0;
+            if (rollMatch) mainQuantity = parseInt(rollMatch[1], 10);
+            else if (sheetMatch) mainQuantity = parseInt(sheetMatch[1], 10);
+            
             const subVersions = [];
             const parenRegex = /\((\d+)\)\s+([A-Z][A-Z0-9]*)/gi;
             let match;
             while ((match = parenRegex.exec(restOfSection)) !== null) {
                 const code = match[2].toUpperCase();
-                if (isValidVersionCode(code)) subVersions.push({ code, qty: parseInt(match[1],10) });
+                if (code.length <= 4 && /^[A-Z]/.test(code)) subVersions.push({ code, qty: parseInt(match[1], 10) });
             }
-            if (subVersions.length === 0) {
-                const verRegex = /VER\s+([A-Z][A-Z0-9]*)\s*-/gi;
-                while ((match = verRegex.exec(restOfSection)) !== null) {
-                    const code = match[1].toUpperCase();
-                    if (isValidVersionCode(code)) subVersions.push({ code, qty: null });
-                }
-            }
-            if (mainQuantity > 0 || panelCount > 1 || printMode.includes('Prep Only')) {
+            
+            if (mainQuantity > 0 || panelCount > 1) {
                 result.set(versionCode, { quantity: mainQuantity, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
+                addDebugLog(`parsePDF - version ${versionCode}`, { quantity: mainQuantity, panelCount, material, dueDate });
             }
-            if (subVersions.length > 0) {
-                const nullCount = subVersions.filter(sv => sv.qty === null).length;
-                let remaining = mainQuantity;
-                for (const sv of subVersions) {
-                    if (sv.qty !== null) {
-                        result.set(sv.code, { quantity: sv.qty, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
-                        remaining -= sv.qty;
-                    }
-                }
-                if (nullCount > 0) {
-                    const share = Math.floor(remaining / nullCount);
-                    let remainder = remaining % nullCount;
-                    for (const sv of subVersions) {
-                        if (sv.qty === null) {
-                            let qty = share;
-                            if (remainder > 0) { qty++; remainder--; }
-                            result.set(sv.code, { quantity: qty, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
-                        }
-                    }
-                }
+            for (const sv of subVersions) {
+                result.set(sv.code, { quantity: sv.qty, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
+                addDebugLog(`parsePDF - sub-version ${sv.code}`, { quantity: sv.qty, panelCount });
             }
         }
+        addDebugLog('parsePDF - result size', result.size);
         return result;
     }
 
     function generateRIPList(formsArray, pdfData) {
+        addDebugLog('generateRIPList - started', `Forms: ${formsArray.length}, PDF data: ${pdfData.size}`);
         const fileNames = [];
         const versionsUsed = [];
         let firstFormInfo = null;
         let hasMultipleVersionsInAnyForm = false;
         let previousFormNumber = null;
         const rowLabels = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+        
         function getFormNumber(versionCode) {
             const digitMatch = versionCode.match(/[A-Z](\d+)/i);
-            if (digitMatch) return parseInt(digitMatch[1],10);
+            if (digitMatch) return parseInt(digitMatch[1], 10);
             const letter = versionCode.toUpperCase();
-            if (letter.length===1 && /[A-Z]/.test(letter)) return letter.charCodeAt(0)-64;
+            if (letter.length === 1 && /[A-Z]/.test(letter)) return letter.charCodeAt(0) - 64;
             return 1;
         }
-        for (let formIdx=0; formIdx<formsArray.length; formIdx++) {
+        
+        for (let formIdx = 0; formIdx < formsArray.length; formIdx++) {
             const form = formsArray[formIdx];
             const formType = (form.type || 'default').toLowerCase();
             const versions = (form.versions || []).filter(v => v.fileName && v.fileName.trim());
             if (!versions.length) continue;
+            
             const firstVersion = versions[0];
             const firstParts = firstVersion.fileName.split('_');
-            const firstVersionCode = firstParts.length>=2 ? firstParts[1].toUpperCase() : '';
-            let formNumber = firstVersionCode ? getFormNumber(firstVersionCode) : formIdx+1;
-            const formNumberPadded = String(formNumber).padStart(3,'0');
-            if (versions.length>1) hasMultipleVersionsInAnyForm = true;
-            const isMultiFileForm = versions.length>1 && versions.some(v => v.tileNum && v.tileNum!=='');
+            const firstVersionCode = firstParts.length >= 2 ? firstParts[1].toUpperCase() : '';
+            let formNumber = firstVersionCode ? getFormNumber(firstVersionCode) : formIdx + 1;
+            const formNumberPadded = String(formNumber).padStart(3, '0');
+            
+            if (versions.length > 1) hasMultipleVersionsInAnyForm = true;
+            const isMultiFileForm = versions.length > 1 && versions.some(v => v.tileNum && v.tileNum !== '');
+            
             if (previousFormNumber !== null && previousFormNumber !== formNumber) {
-                for (let i=0;i<3;i++) fileNames.push('');
+                for (let i = 0; i < 3; i++) fileNames.push('');
             }
+            
             let firstVersionInForm = true;
-            for (let vIdx=0; vIdx<versions.length; vIdx++) {
+            
+            for (let vIdx = 0; vIdx < versions.length; vIdx++) {
                 const version = versions[vIdx];
                 const fileName = version.fileName;
                 const parts = fileName.split('_');
-                const versionCode = parts.length>=2 ? parts[1].toUpperCase() : '';
+                const versionCode = parts.length >= 2 ? parts[1].toUpperCase() : '';
                 if (!versionCode) continue;
+                
                 const versionInfo = pdfData.get(versionCode);
-                if (!versionInfo) continue;
+                if (!versionInfo) {
+                    addDebugLog(`generateRIPList - version ${versionCode} not found`, '');
+                    continue;
+                }
+                
                 let quantity = versionInfo.quantity;
                 let panelCount = versionInfo.panelCount;
                 const material = versionInfo.material;
@@ -592,44 +616,50 @@
                 const printMode = versionInfo.printMode;
                 const laminated = versionInfo.laminated;
                 const zundCut = versionInfo.zundCut;
+                
                 versionsUsed.push(versionCode);
+                
                 if (!firstFormInfo) {
                     firstFormInfo = { quantity, material, dueDate, printMode, laminated, zundCut, isMultiFile: isMultiFileForm };
                 }
+                
                 if (!firstVersionInForm) {
-                    for (let i=0;i<3;i++) fileNames.push('');
+                    for (let i = 0; i < 3; i++) fileNames.push('');
                 }
                 firstVersionInForm = false;
+                
                 fileNames.push(`${formNumberPadded}_${fileName}`);
+                
                 if (isMultiFileForm) {
                     fileNames.push(`${formNumberPadded} x${quantity}`);
                 } else if (formType === 'billboard') {
-                    if (panelCount>1) {
-                        for (let rep=0; rep<quantity; rep++) {
-                            for (let panel=1; panel<=panelCount; panel++) {
+                    if (panelCount > 1) {
+                        for (let repeat = 0; repeat < quantity; repeat++) {
+                            for (let panel = 1; panel <= panelCount; panel++) {
                                 fileNames.push(`${formNumberPadded}_A${panel}`);
                             }
                         }
+                        addDebugLog(`generateRIPList - billboard ${versionCode}`, { quantity, panelCount, panelSequence: `${panelCount} panels x ${quantity} repeats` });
                     } else {
                         fileNames.push(`x${quantity}`);
                     }
                 } else if (formType === 'spectacular') {
                     const tilesPerRow = version.tilesPerRow || [];
                     if (tilesPerRow.length) {
-                        for (let row=0; row<tilesPerRow.length; row++) {
+                        for (let row = 0; row < tilesPerRow.length; row++) {
                             const tilesInRow = parseInt(tilesPerRow[row]) || 0;
-                            const rowLabel = rowLabels[row] || String.fromCharCode(65+row);
-                            for (let tile=1; tile<=tilesInRow; tile++) {
+                            const rowLabel = rowLabels[row] || String.fromCharCode(65 + row);
+                            for (let tile = 1; tile <= tilesInRow; tile++) {
                                 fileNames.push(`${formNumberPadded}_${rowLabel}${tile}`);
                             }
                         }
                     } else {
-                        for (let panel=1; panel<=panelCount; panel++) {
+                        for (let panel = 1; panel <= panelCount; panel++) {
                             fileNames.push(`${formNumberPadded}_A${panel}`);
                         }
                     }
                 } else { // default
-                    if (panelCount>1) {
+                    if (panelCount > 1) {
                         fileNames.push(`${formNumberPadded}_A1-A${panelCount} x${quantity}`);
                     } else {
                         fileNames.push(`x${quantity}`);
@@ -638,6 +668,8 @@
             }
             previousFormNumber = formNumber;
         }
+        addDebugLog('generateRIPList - total file names', fileNames.length);
+        if (fileNames.length < 50) addDebugLog('generateRIPList - first 10 file names', fileNames.slice(0, 10));
         return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
     }
 
@@ -645,6 +677,7 @@
         const LINES_PER_PAGE = 48;
         const pages = [];
         let currentBaseFileName = null;
+        
         function isBaseFileName(entry) {
             if (!entry || entry === '') return false;
             if (/^x\d+$/i.test(entry)) return false;
@@ -652,8 +685,9 @@
             if (/^\d{3}\s+1A-\d+A\s+x\d+$/i.test(entry)) return false;
             return true;
         }
-        for (let start=0; start<allFileNames.length; start+=LINES_PER_PAGE) {
-            let chunk = allFileNames.slice(start, start+LINES_PER_PAGE);
+        
+        for (let start = 0; start < allFileNames.length; start += LINES_PER_PAGE) {
+            let chunk = allFileNames.slice(start, start + LINES_PER_PAGE);
             if (currentBaseFileName) {
                 const firstNonBlank = chunk.find(entry => entry !== '');
                 if (firstNonBlank && !isBaseFileName(firstNonBlank)) {
@@ -661,20 +695,24 @@
                     if (chunk.length > LINES_PER_PAGE) chunk = chunk.slice(0, LINES_PER_PAGE);
                 }
             }
-            for (let j=chunk.length-1; j>=0; j--) {
+            for (let j = chunk.length - 1; j >= 0; j--) {
                 if (isBaseFileName(chunk[j])) {
                     currentBaseFileName = chunk[j];
                     break;
                 }
             }
-            pages.push({ lines: chunk.slice(), pageNumber: pages.length+1 });
+            
+            // Pad chunk to exactly 48 lines (required for two-column layout)
+            while (chunk.length < LINES_PER_PAGE) chunk.push('');
+            
+            pages.push({ lines: chunk.slice(), pageNumber: pages.length + 1 });
         }
+        addDebugLog('paginateRipList - pages', pages.length);
+        if (pages.length > 0) addDebugLog('paginateRipList - first page lines (first 10)', pages[0].lines.slice(0, 10));
         return pages;
     }
 
-    // --------------------------------------------------------------
-    // 3.  Improved PDF text extraction (preserves line breaks)
-    // --------------------------------------------------------------
+    // PDF text extraction
     async function extractPdfText(file) {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -685,37 +723,30 @@
             let lastY = null;
             let pageText = '';
             for (const item of content.items) {
-                if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
-                    pageText += '\n';
-                }
+                if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) pageText += '\n';
                 pageText += item.str;
                 lastY = item.transform[5];
             }
-            fullText += pageText + '\n\n';  // extra newline between pages
+            fullText += pageText + '\n\n';
         }
-        // Normalize line endings and trim excessive spaces
         fullText = fullText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ');
-        console.log('Extracted PDF text length:', fullText.length);
-        console.log('First 500 chars:', fullText.substring(0, 500));
+        addDebugLog('extractPdfText - length', fullText.length);
+        addDebugLog('extractPdfText - first 500 chars', fullText.substring(0, 500));
         return fullText;
     }
 
-    // --------------------------------------------------------------
-    // 4.  FDF generation (AppleScript-ready)
-    // --------------------------------------------------------------
+    // FDF generation
     function escapeFDF(s) {
         if (s === undefined || s === null) return '';
         return String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
     }
 
     function generateFDF(pageLines, topData) {
+        addDebugLog('generateFDF - topData', topData);
         let fdf = `%FDF-1.2\n%âãÏÓ\n1 0 obj\n<< /FDF << /Fields [\n`;
-
-        // Date/Time
+        
         const now = new Date();
         fdf += `<</T(Date5_af_date)/V(${escapeFDF(now.toLocaleString())})>>\n`;
-
-        // Basic text fields
         fdf += `<</T(Ripped By)/V(${escapeFDF(topData.ripped_by)})>>\n`;
         fdf += `<</T(Printer)/V(${escapeFDF(topData.printer)})>>\n`;
         fdf += `<</T(Qty)/V(${escapeFDF(topData.quantity)})>>\n`;
@@ -724,51 +755,39 @@
         fdf += `<</T(Job.Job)/V(${escapeFDF(topData.job_number)})>>\n`;
         fdf += `<</T(Customer.Customer)/V(${escapeFDF(topData.customer)})>>\n`;
         fdf += `<</T(Versions.Versions)/V(${escapeFDF(topData.version)})>>\n`;
-
-        // Laminate
         fdf += `<</T(Laminate)/V(${topData.laminated ? 'Yes' : 'Off'})>>\n`;
-
-        // Radio buttons: Laser / Mini
+        
         if (topData.color_match === 'Laser') {
-            fdf += `<</T(Laser)/V(Yes)>>\n`;
-            fdf += `<</T(Mini)/V(Off)>>\n`;
+            fdf += `<</T(Laser)/V(Yes)>>\n<</T(Mini)/V(Off)>>\n`;
         } else if (topData.color_match === 'Mini') {
-            fdf += `<</T(Mini)/V(Yes)>>\n`;
-            fdf += `<</T(Laser)/V(Off)>>\n`;
+            fdf += `<</T(Mini)/V(Yes)>>\n<</T(Laser)/V(Off)>>\n`;
         } else {
-            fdf += `<</T(Laser)/V(Off)>>\n`;
-            fdf += `<</T(Mini)/V(Off)>>\n`;
+            fdf += `<</T(Laser)/V(Off)>>\n<</T(Mini)/V(Off)>>\n`;
         }
-
-        // Print mode checkbox (4/0)
+        
         const printMode = topData.print_mode || '';
         fdf += `<</T(4/0)/V(${printMode.includes('4/0') ? 'Yes' : 'Off'})>>\n`;
-
-        // Zund cut
         fdf += `<</T(Zund)/V(${topData.zund_cut ? 'Yes' : 'Off'})>>\n`;
-
-        // Lines 1..48 from the page
+        
         for (let i = 0; i < pageLines.length && i < 48; i++) {
             fdf += `<</T(Line${i+1})/V(${escapeFDF(pageLines[i])})>>\n`;
         }
-        // Fill remaining empty lines
         for (let i = pageLines.length; i < 48; i++) {
             fdf += `<</T(Line${i+1})/V()>>\n`;
         }
-
+        
         fdf += `] >>\n>>\nendobj\nxref\n0 1\n0000000000 65535 f \n0000000000 00000 n \ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
+        addDebugLog('generateFDF - completed', `Lines in FDF: ${pageLines.length}`);
         return fdf;
     }
 
-    // --------------------------------------------------------------
-    // 5.  UI helpers and main submit
-    // --------------------------------------------------------------
+    // UI initialization
     const currentHour = new Date().getHours();
     document.getElementById('rippedBy').value = (currentHour >= 6 && currentHour < 18) ? 'GH' : 'JD';
-
+    
     let currentJobNumber = null;
     let currentPdfFile = null;
-
+    
     const animalEmojis = ['🐶','🐱','🦊','🐻','🐼','🐨','🦁','🐮','🐷','🐸','🐧','🦉','🦄','🐙','🦋'];
     const usedEmojis = new Set();
     function getRandomEmoji() {
@@ -779,19 +798,19 @@
         return emoji;
     }
     function releaseEmoji(emoji) { usedEmojis.delete(emoji); }
-
+    
     const formsContainer = document.getElementById('formsContainer');
     let pendingBatchFiles = [];
     const modal = document.getElementById('typeSelectorModal');
     const fileCountSpan = document.getElementById('fileCount');
     const batchTypeSelect = document.getElementById('batchTypeSelect');
-
+    
     function cleanFileName(fileName) { return fileName.replace(/\.pdf$/i,''); }
     function extractJobNumber(fileName) { const m = fileName.match(/^(\d{6})/); return m ? m[1] : null; }
-
-    function autoFetchAndSetPdf(jobNumber) { /* disabled */ console.log('Auto‑fetch disabled'); }
-    function updatePdfButtons() { /* placeholder */ }
-
+    
+    function autoFetchAndSetPdf(jobNumber) { addDebugLog('autoFetchAndSetPdf - disabled', jobNumber); }
+    function updatePdfButtons() {}
+    
     document.getElementById('viewJobTicketBtn').addEventListener('click', () => {
         if (currentJobNumber) window.open(`https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${currentJobNumber}`, '_blank');
         else alert('No job number available.');
@@ -805,13 +824,10 @@
         document.getElementById('pdfStatus').className = 'pdf-status';
     });
     document.getElementById('jobTicketPdf').addEventListener('change', () => {
-        if (!document.getElementById('jobTicketPdf').files.length) {
-            currentJobNumber = null;
-            currentPdfFile = null;
-        }
+        if (!document.getElementById('jobTicketPdf').files.length) { currentJobNumber = null; currentPdfFile = null; }
         updatePdfButtons();
     });
-
+    
     function createFormBlock(formType = 'default') {
         const blockId = `formBlock_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
         const blockDiv = document.createElement('div');
@@ -822,99 +838,43 @@
         const leftDropZone = document.createElement('div');
         leftDropZone.className = 'drop-zone-left';
         leftDropZone.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
-        leftDropZone.addEventListener('drop', (e) => {
-            e.preventDefault(); e.stopPropagation();
-            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-            if (!files.length) return;
-            files.forEach(file => { const newBlock = createFormBlock('default'); populateFormBlockWithFiles(newBlock, [file]); });
-        });
+        leftDropZone.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'); if (!files.length) return; files.forEach(file => { const newBlock = createFormBlock('default'); populateFormBlockWithFiles(newBlock, [file]); }); });
         blockDiv.appendChild(leftDropZone);
         blockDiv.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); blockDiv.classList.add('drag-over'); });
         blockDiv.addEventListener('dragleave', () => blockDiv.classList.remove('drag-over'));
-        blockDiv.addEventListener('drop', (e) => {
-            e.preventDefault(); e.stopPropagation(); blockDiv.classList.remove('drag-over');
-            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-            if (!files.length) return;
-            populateFormBlockWithFiles(blockDiv, files);
-        });
-        const headerHtml = `
-            <h4><span>${formEmoji}</span><button class="remove-btn" onclick="removeFormBlock('${blockId}','${formEmoji}')">Remove</button></h4>
+        blockDiv.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); blockDiv.classList.remove('drag-over'); const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'); if (!files.length) return; populateFormBlockWithFiles(blockDiv, files); });
+        const headerHtml = `<h4><span>${formEmoji}</span><button class="remove-btn" onclick="removeFormBlock('${blockId}','${formEmoji}')">Remove</button></h4>
             <div class="form-group"><label>Form Type:</label><select class="formTypeSelect" data-block-id="${blockId}">
-                <option value="">-- Select --</option>
-                <option value="default" ${formType==='default' ? 'selected' : ''}>Default</option>
-                <option value="billboard" ${formType==='billboard' ? 'selected' : ''}>Billboard</option>
-                <option value="spectacular" ${formType==='spectacular' ? 'selected' : ''}>Vinyl Spectacular</option>
-            </select></div>
-            <div class="dynamicFieldsArea" id="fields_${blockId}"></div>
-        `;
+            <option value="">-- Select --</option><option value="default" ${formType==='default' ? 'selected' : ''}>Default</option>
+            <option value="billboard" ${formType==='billboard' ? 'selected' : ''}>Billboard</option>
+            <option value="spectacular" ${formType==='spectacular' ? 'selected' : ''}>Vinyl Spectacular</option></select></div>
+            <div class="dynamicFieldsArea" id="fields_${blockId}"></div>`;
         blockDiv.insertAdjacentHTML('beforeend', headerHtml);
         formsContainer.appendChild(blockDiv);
         const typeSelect = blockDiv.querySelector('.formTypeSelect');
         const fieldsArea = document.getElementById(`fields_${blockId}`);
         function generateFields(type) {
             let html = '';
-            if (type === 'default' || type === 'billboard') {
-                html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
-            } else if (type === 'spectacular') {
-                html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
-            }
+            if (type === 'default' || type === 'billboard') html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
+            else if (type === 'spectacular') html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
             fieldsArea.innerHTML = html;
             if (type === 'default' || type === 'billboard') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
-                function updateVersionFields() {
-                    const qty = parseInt(qtyInput.value) || 1;
-                    let fieldsHtml = '';
-                    for (let i=1; i<=qty; i++) {
-                        fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file"><br></div>`;
-                    }
-                    container.innerHTML = fieldsHtml;
-                }
-                qtyInput.addEventListener('input', updateVersionFields);
-                updateVersionFields();
+                function updateVersionFields() { const qty = parseInt(qtyInput.value) || 1; let fieldsHtml = ''; for (let i=1; i<=qty; i++) fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file"><br></div>`; container.innerHTML = fieldsHtml; }
+                qtyInput.addEventListener('input', updateVersionFields); updateVersionFields();
             } else if (type === 'spectacular') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
-                function updateVersionFields() {
-                    const qty = parseInt(qtyInput.value) || 1;
-                    let fieldsHtml = '';
-                    for (let i=1; i<=qty; i++) {
-                        fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="specFileName" data-index="${i}"><br>
-                                        <label>Row Count #${i}:</label> <input type="number" class="specRowCount" data-index="${i}" min="1" value="1"><br>
-                                        <div class="specRowContainer_${i}"></div></div>`;
-                    }
-                    container.innerHTML = fieldsHtml;
-                    for (let i=1; i<=qty; i++) {
-                        const rowContainer = container.querySelector(`.specRowContainer_${i}`);
-                        const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`);
-                        function updateSpecRows() {
-                            const rows = parseInt(rowCountInput.value) || 1;
-                            let rowsHtml = '';
-                            for (let r=1; r<=rows; r++) {
-                                rowsHtml += `<div class="tile-row"><label># of tiles in Row ${r}:</label> <input type="text" class="specTileCount" data-version="${i}" data-row="${r}" placeholder="e.g., 5"><br></div>`;
-                            }
-                            rowContainer.innerHTML = rowsHtml;
-                            const tileInputs = rowContainer.querySelectorAll('.specTileCount');
-                            if (tileInputs.length) {
-                                tileInputs[0].addEventListener('input', function(e) {
-                                    const firstVal = e.target.value;
-                                    for (let j=1; j<tileInputs.length; j++) tileInputs[j].value = firstVal;
-                                });
-                            }
-                        }
-                        rowCountInput.addEventListener('input', updateSpecRows);
-                        updateSpecRows();
-                    }
-                }
-                qtyInput.addEventListener('input', updateVersionFields);
-                updateVersionFields();
+                function updateVersionFields() { const qty = parseInt(qtyInput.value) || 1; let fieldsHtml = ''; for (let i=1; i<=qty; i++) fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="specFileName" data-index="${i}"><br><label>Row Count #${i}:</label> <input type="number" class="specRowCount" data-index="${i}" min="1" value="1"><br><div class="specRowContainer_${i}"></div></div>`; container.innerHTML = fieldsHtml; for (let i=1; i<=qty; i++) { const rowContainer = container.querySelector(`.specRowContainer_${i}`); const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`); function updateSpecRows() { const rows = parseInt(rowCountInput.value) || 1; let rowsHtml = ''; for (let r=1; r<=rows; r++) rowsHtml += `<div class="tile-row"><label># of tiles in Row ${r}:</label> <input type="text" class="specTileCount" data-version="${i}" data-row="${r}" placeholder="e.g., 5"><br></div>`; rowContainer.innerHTML = rowsHtml; const tileInputs = rowContainer.querySelectorAll('.specTileCount'); if (tileInputs.length) { tileInputs[0].addEventListener('input', function(e) { const firstVal = e.target.value; for (let j=1; j<tileInputs.length; j++) tileInputs[j].value = firstVal; }); } } rowCountInput.addEventListener('input', updateSpecRows); updateSpecRows(); } }
+                qtyInput.addEventListener('input', updateVersionFields); updateVersionFields();
             }
         }
         generateFields(formType);
         typeSelect.addEventListener('change', (e) => generateFields(e.target.value));
         return blockDiv;
     }
-
+    
     function populateFormBlockWithFiles(block, files) {
         const typeSelect = block.querySelector('.formTypeSelect');
         const type = typeSelect.value;
@@ -926,52 +886,26 @@
             let inputs;
             if (type === 'default' || type === 'billboard') inputs = block.querySelectorAll('.defaultFileName');
             else if (type === 'spectacular') inputs = block.querySelectorAll('.specFileName');
-            if (inputs) {
-                files.forEach((file,i) => { if(inputs[i]) inputs[i].value = cleanFileName(file.name); });
-            }
+            if (inputs) { files.forEach((file,i) => { if(inputs[i]) inputs[i].value = cleanFileName(file.name); }); }
             const firstFileName = files[0].name;
             const jobNum = extractJobNumber(firstFileName);
-            if (jobNum && !currentJobNumber) {
-                currentJobNumber = jobNum;
-                document.getElementById('pdfStatus').textContent = 'Job number detected. Please upload the job ticket PDF manually.';
-            }
+            if (jobNum && !currentJobNumber) { currentJobNumber = jobNum; document.getElementById('pdfStatus').textContent = 'Job number detected. Please upload the job ticket PDF manually.'; }
         }, 50);
     }
-
-    window.removeFormBlock = function(blockId, emoji) {
-        const block = document.getElementById(blockId);
-        if (block) { releaseEmoji(emoji); block.remove(); }
-    };
-
+    
+    window.removeFormBlock = function(blockId, emoji) { const block = document.getElementById(blockId); if (block) { releaseEmoji(emoji); block.remove(); } };
+    
     createFormBlock('default');
     document.getElementById('addAnotherFormBtn').addEventListener('click', () => createFormBlock('default'));
-
+    
     const batchZone = document.getElementById('batchDropZone');
     batchZone.addEventListener('dragover', (e) => { e.preventDefault(); batchZone.classList.add('drag-over'); });
     batchZone.addEventListener('dragleave', () => batchZone.classList.remove('drag-over'));
-    batchZone.addEventListener('drop', (e) => {
-        e.preventDefault(); batchZone.classList.remove('drag-over');
-        const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-        if (!files.length) return;
-        pendingBatchFiles = files;
-        fileCountSpan.textContent = files.length;
-        modal.style.display = 'flex';
-    });
-    document.getElementById('confirmBatchType').addEventListener('click', () => {
-        const selected = batchTypeSelect.value;
-        pendingBatchFiles.forEach(file => {
-            const newBlock = createFormBlock(selected);
-            populateFormBlockWithFiles(newBlock, [file]);
-        });
-        modal.style.display = 'none';
-        pendingBatchFiles = [];
-    });
-    document.getElementById('cancelBatchType').addEventListener('click', () => {
-        modal.style.display = 'none';
-        pendingBatchFiles = [];
-    });
+    batchZone.addEventListener('drop', (e) => { e.preventDefault(); batchZone.classList.remove('drag-over'); const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'); if (!files.length) return; pendingBatchFiles = files; fileCountSpan.textContent = files.length; modal.style.display = 'flex'; });
+    document.getElementById('confirmBatchType').addEventListener('click', () => { const selected = batchTypeSelect.value; pendingBatchFiles.forEach(file => { const newBlock = createFormBlock(selected); populateFormBlockWithFiles(newBlock, [file]); }); modal.style.display = 'none'; pendingBatchFiles = []; });
+    document.getElementById('cancelBatchType').addEventListener('click', () => { modal.style.display = 'none'; pendingBatchFiles = []; });
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-
+    
     const overlay = document.getElementById('submissionOverlay');
     const overlayTitle = document.getElementById('overlayTitle');
     const summaryContent = document.getElementById('summaryContent');
@@ -980,11 +914,9 @@
     const downloadContainer = document.getElementById('downloadContainer');
     const errorContainer = document.getElementById('errorContainer');
     const feedbackContainer = document.getElementById('feedbackContainer');
-
-    function saveFailureToLocal(summaryText, timestamp, formData) {
-        addFailure({ timestamp, ...formData, summary: summaryText });
-    }
-
+    
+    function saveFailureToLocal(summaryText, timestamp, formData) { addFailure({ timestamp, ...formData, summary: summaryText }); }
+    
     function showFeedbackSection(summaryText, timestamp, formData) {
         feedbackContainer.style.display = 'block';
         const yesBtn = document.getElementById('feedbackYesBtn');
@@ -993,31 +925,17 @@
         const newNo = noBtn.cloneNode(true);
         yesBtn.parentNode.replaceChild(newYes, yesBtn);
         noBtn.parentNode.replaceChild(newNo, noBtn);
-        newYes.addEventListener('click', () => {
-            feedbackContainer.style.display = 'none';
-            overlay.style.display = 'none';
-        });
-        newNo.addEventListener('click', () => {
-            newNo.disabled = true;
-            newNo.innerHTML = 'Saving... <span class="loading-small"></span>';
-            saveFailureToLocal(summaryText, timestamp, formData);
-            feedbackContainer.style.display = 'none';
-            overlay.style.display = 'none';
-            alert('Failure saved locally. Click the "Failures" button to view.');
-        });
+        newYes.addEventListener('click', () => { feedbackContainer.style.display = 'none'; overlay.style.display = 'none'; });
+        newNo.addEventListener('click', () => { newNo.disabled = true; newNo.innerHTML = 'Saving... <span class="loading-small"></span>'; saveFailureToLocal(summaryText, timestamp, formData); feedbackContainer.style.display = 'none'; overlay.style.display = 'none'; alert('Failure saved locally. Click the "Failures" button to view.'); });
     }
-
+    
     document.getElementById('submitBtn').addEventListener('click', async () => {
         const rippedBy = document.getElementById('rippedBy').value;
         const printer = document.getElementById('printer').value;
         const colorMatch = document.getElementById('colorMatch').value;
         const fileInput = document.getElementById('jobTicketPdf');
-
-        if (!fileInput.files.length) {
-            alert('Please select a PDF file to upload.');
-            return;
-        }
-
+        if (!fileInput.files.length) { alert('Please select a PDF file to upload.'); return; }
+        
         const forms = [];
         document.querySelectorAll('.form-block').forEach((block, idx) => {
             const typeSelect = block.querySelector('.formTypeSelect');
@@ -1039,37 +957,32 @@
             }
             forms.push(formData);
         });
-
+        
         const jobNumber = currentJobNumber || (forms[0]?.versions[0]?.fileName?.match(/^(\d{6})/)?.[1] || 'Unknown');
         const formDataCopy = { rippedBy, printer, colorMatch, jobNumber, forms };
-
+        
         overlayTitle.textContent = 'Generating RIP List';
-        summaryContent.innerHTML = `
-            <div class="summary-item"><strong>Ripped by:</strong> ${rippedBy}</div>
-            <div class="summary-item"><strong>Printer:</strong> ${printer}</div>
-            <div class="summary-item"><strong>Color Match:</strong> ${colorMatch}</div>
-            <div class="summary-item"><strong>File:</strong> ${fileInput.files[0].name}</div>
-            <div class="summary-item"><strong>Forms:</strong> ${forms.length}</div>
-        `;
+        summaryContent.innerHTML = `<div class="summary-item"><strong>Ripped by:</strong> ${rippedBy}</div><div class="summary-item"><strong>Printer:</strong> ${printer}</div><div class="summary-item"><strong>Color Match:</strong> ${colorMatch}</div><div class="summary-item"><strong>File:</strong> ${fileInput.files[0].name}</div><div class="summary-item"><strong>Forms:</strong> ${forms.length}</div>`;
         spinner.style.display = 'block';
         statusMessage.textContent = 'Processing job ticket...';
         downloadContainer.innerHTML = '';
         errorContainer.innerHTML = '';
         feedbackContainer.style.display = 'none';
         overlay.style.display = 'flex';
-
+        
         try {
             const pdfText = await extractPdfText(fileInput.files[0]);
             const pdfData = parsePDF(pdfText);
             const { fileNames, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
             const pages = paginateRipList(fileNames);
-
-            if (!pages.length) throw new Error('No pages generated – check console for PDF text');
-
+            if (!pages.length) throw new Error('No pages generated');
+            
             const firstPageLines = pages[0].lines;
+            const allVersionsList = Array.from(pdfData.keys());
+            
             const topData = {
-                customer: (firstFormInfo?.material || '').split(' - ')[0] || '',
-                job_number: jobNumber,
+                customer: window.extractedPdfMeta?.customer || '',
+                job_number: window.extractedPdfMeta?.jobNumber || jobNumber,
                 printer: printer,
                 ripped_by: rippedBy,
                 color_match: colorMatch,
@@ -1080,37 +993,36 @@
                 due_date: firstFormInfo?.dueDate || '',
                 laminated: firstFormInfo?.laminated || false,
                 zund_cut: firstFormInfo?.zundCut || false,
-                version: fileNames.filter(n => n && !n.match(/^x\d+$/i) && !n.match(/^\d{3}_/)).slice(0,5).join(', ')
+                version: allVersionsList.join(', ')
             };
-
+            
             const fdfContent = generateFDF(firstPageLines, topData);
             const blob = new Blob([fdfContent], { type: 'text/plain' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = 'rip_data.fdf';
             link.click();
-
+            
             spinner.style.display = 'none';
             statusMessage.textContent = 'FDF file ready';
-            downloadContainer.innerHTML = `<p>✅ FDF file created: <strong>rip_data.fdf</strong> saved to your Desktop.</p>
-                                           <p>👉 Double‑click your AppleScript (RIP PDF Generator) and select this file.</p>`;
+            downloadContainer.innerHTML = `<p>✅ FDF file created: <strong>rip_data.fdf</strong> saved to your Desktop.</p><p>👉 Double‑click your AppleScript (RIP PDF Generator) and select this file.</p>`;
             const summaryText = summaryContent.innerText;
             const timestamp = new Date().toLocaleString();
             showFeedbackSection(summaryText, timestamp, formDataCopy);
-
         } catch (err) {
             console.error(err);
+            addDebugLog('SUBMIT ERROR', err.message);
             spinner.style.display = 'none';
             overlayTitle.textContent = 'Generation Failed';
             statusMessage.textContent = '';
             errorContainer.innerHTML = `<p>Error: ${err.message}</p><button onclick="document.getElementById('submissionOverlay').style.display='none'">Close</button>`;
         }
     });
-
+    
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.style.display = 'none'; });
     document.body.addEventListener('dragover', (e) => e.preventDefault());
     document.body.addEventListener('drop', (e) => e.preventDefault());
-
+    
     loadFailures();
 </script>
 </body>
