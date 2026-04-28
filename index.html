@@ -304,7 +304,6 @@
         addDebugLog('parsePDF - started', `Text length: ${pdfText.length}`);
         const result = new Map();
         
-        // Extract customer - works for both formats
         let extractedCustomer = '';
         const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)\n\s*([^\n]+)/);
         if (customerMatch) extractedCustomer = customerMatch[2].trim();
@@ -314,7 +313,6 @@
         }
         addDebugLog('parsePDF - customer', extractedCustomer);
         
-        // Extract job number
         let extractedJobNo = '';
         const jobMatch = pdfText.match(/JobNo\s*\n\s*(\d{5,6})/);
         if (jobMatch) extractedJobNo = jobMatch[1];
@@ -326,12 +324,10 @@
         
         window.extractedPdfMeta = { customer: extractedCustomer, jobNumber: extractedJobNo };
         
-        // METHOD 1: Try old format (Version on new lines)
         let sections = pdfText.split(/Version\s*\n/i);
         let foundSections = sections.length - 1;
         addDebugLog('parsePDF - old format sections found', foundSections);
         
-        // METHOD 2: If old format didn't find sections, try HTML table format
         if (foundSections === 0) {
             addDebugLog('parsePDF - trying HTML table format', '');
             
@@ -450,7 +446,6 @@
             }
         }
         
-        // METHOD 3: Old format processing
         if (foundSections > 0) {
             for (let i = 1; i < sections.length; i++) {
                 let section = sections[i];
@@ -469,7 +464,6 @@
                 }
                 if (!versionCode) continue;
                 
-                // Skip if this looks like a job number (6 digits)
                 if (/^\d{6}$/.test(versionCode)) continue;
                 if (versionCode.length > 4) continue;
                 
@@ -519,7 +513,6 @@
             }
         }
         
-        // Final cleanup: remove any job numbers that got through
         for (const [key, value] of result) {
             if (/^\d{6}$/.test(key)) {
                 result.delete(key);
@@ -627,9 +620,18 @@
                 if (isMultiFileForm) {
                     fileNames.push(`${formNumberPadded} x${quantity}`);
                 } else if (formType === 'billboard') {
-                    for (let repeat = 0; repeat < quantity; repeat++) {
-                        for (let panel = 1; panel <= panelCount; panel++) {
-                            fileNames.push(`${formNumberPadded}_A${panel}`);
+                    // If panelCount is 1, use default condensed format
+                    if (panelCount === 1) {
+                        if (quantity > 1) {
+                            fileNames.push(`x${quantity}`);
+                        } else {
+                            fileNames.push(`x${quantity}`);
+                        }
+                    } else {
+                        for (let repeat = 0; repeat < quantity; repeat++) {
+                            for (let panel = 1; panel <= panelCount; panel++) {
+                                fileNames.push(`${formNumberPadded}_A${panel}`);
+                            }
                         }
                     }
                 } else if (formType === 'spectacular') {
@@ -890,21 +892,66 @@
         formsContainer.appendChild(blockDiv);
         const typeSelect = blockDiv.querySelector('.formTypeSelect');
         const fieldsArea = document.getElementById(`fields_${blockId}`);
+        
         function generateFields(type) {
+            // Save existing file names before regenerating
+            let savedFileNames = [];
+            const existingInputs = blockDiv.querySelectorAll('.defaultFileName, .specFileName');
+            existingInputs.forEach(input => {
+                if (input.value) savedFileNames.push(input.value);
+            });
+            
             let html = '';
             if (type === 'default' || type === 'billboard') html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
             else if (type === 'spectacular') html = `<label>Version Quantity:</label> <input type="number" class="versionQty" min="1" value="1"><br><br><div class="versionContainer"></div>`;
             fieldsArea.innerHTML = html;
+            
             if (type === 'default' || type === 'billboard') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
-                function updateVersionFields() { const qty = parseInt(qtyInput.value) || 1; let fieldsHtml = ''; for (let i=1; i<=qty; i++) fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file"><br></div>`; container.innerHTML = fieldsHtml; }
-                qtyInput.addEventListener('input', updateVersionFields); updateVersionFields();
+                function updateVersionFields() { 
+                    const qty = parseInt(qtyInput.value) || 1; 
+                    let fieldsHtml = ''; 
+                    for (let i=1; i<=qty; i++) { 
+                        let savedValue = (savedFileNames[i-1] !== undefined) ? savedFileNames[i-1] : '';
+                        fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="defaultFileName" data-index="${i}" placeholder="e.g., my_file" value="${savedValue.replace(/"/g, '&quot;')}"><br></div>`; 
+                    } 
+                    container.innerHTML = fieldsHtml; 
+                }
+                qtyInput.addEventListener('input', updateVersionFields); 
+                updateVersionFields();
             } else if (type === 'spectacular') {
                 const container = blockDiv.querySelector('.versionContainer');
                 const qtyInput = blockDiv.querySelector('.versionQty');
-                function updateVersionFields() { const qty = parseInt(qtyInput.value) || 1; let fieldsHtml = ''; for (let i=1; i<=qty; i++) fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="specFileName" data-index="${i}"><br><label>Row Count #${i}:</label> <input type="number" class="specRowCount" data-index="${i}" min="1" value="1"><br><div class="specRowContainer_${i}"></div></div>`; container.innerHTML = fieldsHtml; for (let i=1; i<=qty; i++) { const rowContainer = container.querySelector(`.specRowContainer_${i}`); const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`); function updateSpecRows() { const rows = parseInt(rowCountInput.value) || 1; let rowsHtml = ''; for (let r=1; r<=rows; r++) rowsHtml += `<div class="tile-row"><label># of tiles in Row ${r}:</label> <input type="text" class="specTileCount" data-version="${i}" data-row="${r}" placeholder="e.g., 5"><br></div>`; rowContainer.innerHTML = rowsHtml; const tileInputs = rowContainer.querySelectorAll('.specTileCount'); if (tileInputs.length) { tileInputs[0].addEventListener('input', function(e) { const firstVal = e.target.value; for (let j=1; j<tileInputs.length; j++) tileInputs[j].value = firstVal; }); } } rowCountInput.addEventListener('input', updateSpecRows); updateSpecRows(); } }
-                qtyInput.addEventListener('input', updateVersionFields); updateVersionFields();
+                function updateVersionFields() { 
+                    const qty = parseInt(qtyInput.value) || 1; 
+                    let fieldsHtml = ''; 
+                    for (let i=1; i<=qty; i++) { 
+                        let savedValue = (savedFileNames[i-1] !== undefined) ? savedFileNames[i-1] : '';
+                        fieldsHtml += `<div class="version-row"><label>File Name #${i}:</label> <input type="text" class="specFileName" data-index="${i}" value="${savedValue.replace(/"/g, '&quot;')}"><br>
+                            <label>Row Count #${i}:</label> <input type="number" class="specRowCount" data-index="${i}" min="1" value="1"><br>
+                            <div class="specRowContainer_${i}"></div></div>`; 
+                    } 
+                    container.innerHTML = fieldsHtml; 
+                    for (let i=1; i<=qty; i++) { 
+                        const rowContainer = container.querySelector(`.specRowContainer_${i}`); 
+                        const rowCountInput = container.querySelector(`.specRowCount[data-index="${i}"]`); 
+                        function updateSpecRows() { 
+                            const rows = parseInt(rowCountInput.value) || 1; 
+                            let rowsHtml = ''; 
+                            for (let r=1; r<=rows; r++) rowsHtml += `<div class="tile-row"><label># of tiles in Row ${r}:</label> <input type="text" class="specTileCount" data-version="${i}" data-row="${r}" placeholder="e.g., 5"><br></div>`; 
+                            rowContainer.innerHTML = rowsHtml; 
+                            const tileInputs = rowContainer.querySelectorAll('.specTileCount'); 
+                            if (tileInputs.length) { 
+                                tileInputs[0].addEventListener('input', function(e) { const firstVal = e.target.value; for (let j=1; j<tileInputs.length; j++) tileInputs[j].value = firstVal; }); 
+                            } 
+                        } 
+                        rowCountInput.addEventListener('input', updateSpecRows); 
+                        updateSpecRows(); 
+                    } 
+                }
+                qtyInput.addEventListener('input', updateVersionFields); 
+                updateVersionFields();
             }
         }
         generateFields(formType);
@@ -1008,7 +1055,6 @@
                 version: versionsUsed.join(', ')
             };
             
-            // FIXED: Local timestamp in YYYYMMDD_HHMMSS format
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth() + 1).padStart(2, '0');
