@@ -300,25 +300,174 @@
     // ========== RIP list generation logic ==========
     function isValidVersionCode(str) { if (str.length > 4) return false; return /^[A-Z][0-9]?[0-9]?$/i.test(str); }
 
-    function parsePDF(pdfText) {
-        addDebugLog('parsePDF - started', `Text length: ${pdfText.length}`);
-        const result = new Map();
+  function parsePDF(pdfText) {
+    addDebugLog('parsePDF - started', `Text length: ${pdfText.length}`);
+    const result = new Map();
+    
+    // Extract customer - works for both formats
+    let extractedCustomer = '';
+    const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)\n\s*([^\n]+)/);
+    if (customerMatch) extractedCustomer = customerMatch[2].trim();
+    if (!extractedCustomer) {
+        const customerMatch2 = pdfText.match(/Customer<\/td>\s*<\/tr>\s*<tr>\s*<td[^>]*>([^<]+)<\/td>/i);
+        if (customerMatch2) extractedCustomer = customerMatch2[1].trim();
+    }
+    addDebugLog('parsePDF - customer', extractedCustomer);
+    
+    // Extract job number
+    let extractedJobNo = '';
+    const jobMatch = pdfText.match(/JobNo\s*\n\s*(\d{5,6})/);
+    if (jobMatch) extractedJobNo = jobMatch[1];
+    if (!extractedJobNo) {
+        const jobMatch2 = pdfText.match(/JobNo<\/td>\s*<\/tr>\s*<tr>\s*<td[^>]*>(\d{5,6})<\/td>/i);
+        if (jobMatch2) extractedJobNo = jobMatch2[1];
+    }
+    addDebugLog('parsePDF - job number', extractedJobNo);
+    
+    window.extractedPdfMeta = { customer: extractedCustomer, jobNumber: extractedJobNo };
+    
+    // METHOD 1: Try old format (Version on new lines)
+    let sections = pdfText.split(/Version\s*\n/i);
+    let foundSections = sections.length - 1;
+    addDebugLog('parsePDF - old format sections found', foundSections);
+    
+    // METHOD 2: If old format didn't find sections, try HTML table format
+    if (foundSections === 0) {
+        addDebugLog('parsePDF - trying HTML table format', '');
         
-        let extractedCustomer = '';
-        const customerMatch = pdfText.match(/Customer\s*\n\s*([^\n]+)\n\s*([^\n]+)/);
-        if (customerMatch) extractedCustomer = customerMatch[2].trim();
-        addDebugLog('parsePDF - customer', extractedCustomer);
+        // Find all table rows that contain version information
+        // Pattern: <tr>...Version ABC...<td>Quantity... etc.
+        const tableRows = pdfText.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
         
-        let extractedJobNo = '';
-        const jobMatch = pdfText.match(/JobNo\s*\n\s*(\d{5,6})/);
-        if (jobMatch) extractedJobNo = jobMatch[1];
-        addDebugLog('parsePDF - job number', extractedJobNo);
+        for (const row of tableRows) {
+            // Extract version codes from the row
+            // Look for patterns like "Version AB", "Version C", "Version DEF", "Version MM"
+            const versionMatch = row.match(/Version\s+([A-Z0-9& ]+)(?:\s*<br\s*\/?>|\s*<)/i);
+            if (versionMatch) {
+                let versionCodes = versionMatch[1].trim();
+                // Split multiple versions like "A & B" or "D, E, F" or "MM01, MM02"
+                let versions = [];
+                if (versionCodes.includes('&')) {
+                    versions = versionCodes.split(/\s*&\s*/);
+                } else if (versionCodes.includes(',')) {
+                    versions = versionCodes.split(/\s*,\s*/);
+                } else if (versionCodes.includes(' ')) {
+                    versions = versionCodes.split(/\s+/);
+                } else {
+                    versions = [versionCodes];
+                }
+                
+                // Extract quantity
+                let quantity = 0;
+                const qtyMatch = row.match(/QTY:\s*(\d+)/i) || row.match(/Qty<\/td>\s*<td[^>]*>(\d+)/i);
+                if (qtyMatch) quantity = parseInt(qtyMatch[1], 10);
+                
+                // Extract size
+                let size = '';
+                const sizeMatch = row.match(/(\d+(?:\.\d+)?\s*["']?\s*[Xx]\s*\d+(?:\.\d+)?\s*["']?)/);
+                if (sizeMatch) size = sizeMatch[1];
+                
+                // Extract due date
+                let dueDate = '';
+                const dueMatch = row.match(/Due:\s*(\d{2}\/\d{2}\/\d{4})/i) || row.match(/DueDate<\/td>\s*<td[^>]*>(\d{2}\/\d{2}\/\d{4})/i);
+                if (dueMatch) dueDate = dueMatch[1];
+                
+                // Extract material/stock
+                let material = '';
+                const stockMatch = row.match(/Stock:\s*([^<\n]+)/i);
+                if (stockMatch) material = stockMatch[1].trim();
+                
+                // Extract print mode
+                let printMode = '';
+                const printMatch = row.match(/(Roll\s*\([^)]+\)|Flatbed\s*Sheet)/i);
+                if (printMatch) printMode = printMatch[1];
+                
+                const laminated = /Laminate/i.test(row);
+                const zundCut = /Zund/i.test(row);
+                
+                // Determine panel count
+                let panelCount = 1;
+                const panelMatch = row.match(/Printing\s+as\s+(\d+)\s+Panels?/i);
+                if (panelMatch) panelCount = parseInt(panelMatch[1], 10);
+                
+                for (const versionCode of versions) {
+                    const cleanCode = versionCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (cleanCode && cleanCode.length <= 4) {
+                        result.set(cleanCode, {
+                            quantity: quantity,
+                            panelCount: panelCount,
+                            material: material,
+                            dueDate: dueDate,
+                            printMode: printMode,
+                            laminated: laminated,
+                            zundCut: zundCut,
+                            mainVersion: cleanCode
+                        });
+                        addDebugLog(`parsePDF - HTML format found version ${cleanCode}`, { quantity, panelCount, material, dueDate });
+                    }
+                }
+            }
+        }
         
-        window.extractedPdfMeta = { customer: extractedCustomer, jobNumber: extractedJobNo };
-        
-        const sections = pdfText.split(/Version\s*\n/i);
-        addDebugLog('parsePDF - sections found', sections.length - 1);
-        
+        // Also try to find version data in the text before/after tables
+        const versionBlocks = pdfText.match(/Version\s+([A-Z0-9& ,]+)(?:<br\s*\/?>|\s*\n)([\s\S]*?)(?=Version|\Z)/gi) || [];
+        for (const block of versionBlocks) {
+            const versionMatch = block.match(/Version\s+([A-Z0-9& ,]+)/i);
+            if (versionMatch) {
+                let versionCodes = versionMatch[1].trim();
+                let versions = [];
+                if (versionCodes.includes('&')) {
+                    versions = versionCodes.split(/\s*&\s*/);
+                } else if (versionCodes.includes(',')) {
+                    versions = versionCodes.split(/\s*,\s*/);
+                } else if (versionCodes.includes(' ')) {
+                    versions = versionCodes.split(/\s+/);
+                } else {
+                    versions = [versionCodes];
+                }
+                
+                // Look for quantity near this block
+                let quantity = 0;
+                const qtyMatch = block.match(/QTY:\s*(\d+)/i) || block.match(/(\d+)\s*(?:QTY|Quantity)/i);
+                if (qtyMatch) quantity = parseInt(qtyMatch[1], 10);
+                
+                // Look for size
+                let size = '';
+                const sizeMatch = block.match(/(\d+(?:\.\d+)?\s*["']?\s*[Xx]\s*\d+(?:\.\d+)?\s*["']?)/);
+                if (sizeMatch) size = sizeMatch[1];
+                
+                // Look for due date
+                let dueDate = '';
+                const dueMatch = block.match(/Due:\s*(\d{2}\/\d{2}\/\d{4})/i);
+                if (dueMatch) dueDate = dueMatch[1];
+                
+                // Look for material
+                let material = '';
+                const stockMatch = block.match(/Stock:\s*([^<\n]+)/i);
+                if (stockMatch) material = stockMatch[1].trim();
+                
+                for (const versionCode of versions) {
+                    const cleanCode = versionCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    if (cleanCode && cleanCode.length <= 4 && !result.has(cleanCode)) {
+                        result.set(cleanCode, {
+                            quantity: quantity,
+                            panelCount: 1,
+                            material: material,
+                            dueDate: dueDate,
+                            printMode: '',
+                            laminated: false,
+                            zundCut: false,
+                            mainVersion: cleanCode
+                        });
+                        addDebugLog(`parsePDF - text block found version ${cleanCode}`, { quantity, material, dueDate });
+                    }
+                }
+            }
+        }
+    }
+    
+    // METHOD 3: Old format processing (keep original logic as fallback)
+    if (foundSections > 0) {
         for (let i = 1; i < sections.length; i++) {
             let section = sections[i];
             if (!section.trim()) continue;
@@ -378,9 +527,51 @@
                 result.set(sv.code, { quantity: sv.qty, panelCount, material, dueDate, printMode, laminated, zundCut, mainVersion: versionCode });
             }
         }
-        addDebugLog('parsePDF - result size', result.size);
-        return result;
     }
+    
+    // Also try to extract version data from the forms array in the text
+    // Look for patterns like "Version AB<br>A & B<br>"
+    const allVersions = pdfText.match(/Version\s+([A-Z0-9& ,]+)(?:\s*<br\s*\/?>|\s*\n)/gi) || [];
+    for (const vMatch of allVersions) {
+        const codes = vMatch.match(/[A-Z0-9& ,]+/i);
+        if (codes) {
+            let versionCodes = codes[0].trim();
+            let versions = [];
+            if (versionCodes.includes('&')) {
+                versions = versionCodes.split(/\s*&\s*/);
+            } else if (versionCodes.includes(',')) {
+                versions = versionCodes.split(/\s*,\s*/);
+            } else if (versionCodes.includes(' ')) {
+                versions = versionCodes.split(/\s+/);
+            } else {
+                versions = [versionCodes];
+            }
+            
+            for (const versionCode of versions) {
+                const cleanCode = versionCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (cleanCode && cleanCode.length <= 4 && !result.has(cleanCode)) {
+                    result.set(cleanCode, {
+                        quantity: 0,
+                        panelCount: 1,
+                        material: '',
+                        dueDate: '',
+                        printMode: '',
+                        laminated: false,
+                        zundCut: false,
+                        mainVersion: cleanCode
+                    });
+                    addDebugLog(`parsePDF - found version from pattern: ${cleanCode}`, '');
+                }
+            }
+        }
+    }
+    
+    addDebugLog('parsePDF - result size', result.size);
+    if (result.size > 0) {
+        addDebugLog('parsePDF - versions found', Array.from(result.keys()).join(', '));
+    }
+    return result;
+}
 
     function generateRIPList(formsArray, pdfData) {
         addDebugLog('generateRIPList - started', `Forms: ${formsArray.length}, PDF data: ${pdfData.size}`);
