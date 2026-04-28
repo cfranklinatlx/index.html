@@ -79,8 +79,6 @@
         .btn-view:hover { background-color: #218838; }
         .btn-remove { background-color: #dc3545; }
         .btn-remove:hover { background-color: #c82333; }
-        .btn-fetch { background-color: #17a2b8; }
-        .btn-fetch:hover { background-color: #138496; }
 
         #typeSelectorModal {
             display: none;
@@ -249,10 +247,9 @@
 <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
-    // ========== LITHOGRAPHIX FETCH CONFIGURATION ==========
-    const LITHO_USERNAME = 'vutek';
-    const LITHO_PASSWORD = 'Trigger13';
-    const CORS_PROXY = 'https://corsproxy.io/?';
+    // ========== LITHOGRAPHIX FETCH CONFIGURATION (from your working version) ==========
+    const LITHO_USERNAME = '';
+    const LITHO_PASSWORD = '';
 
     // Debug logging
     let debugLogs = [];
@@ -276,17 +273,21 @@
         document.getElementById('debugPanel').style.display = 'none';
     });
 
-    // ========== FETCH JOB TICKET FROM LITHOGRAPHIX ==========
+    // ========== FETCH JOB TICKET FROM LITHOGRAPHIX (from your working version) ==========
     async function fetchJobTicketPDF(jobNumber) {
         const url = `https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${jobNumber}`;
-        const proxyUrl = CORS_PROXY + encodeURIComponent(url);
         const authString = btoa(`${LITHO_USERNAME}:${LITHO_PASSWORD}`);
-        const response = await fetch(proxyUrl, {
-            headers: { 'Authorization': 'Basic ' + authString }
+        
+        const response = await fetch(url, {
+            headers: { 
+                'Authorization': 'Basic ' + authString
+            }
         });
+        
         if (!response.ok) {
             throw new Error(`Failed to fetch job ticket: ${response.status}`);
         }
+        
         return await response.arrayBuffer();
     }
 
@@ -610,51 +611,80 @@
     
     function cleanFileName(fileName) { return fileName.replace(/\.pdf$/i,''); }
     
-    // Auto-fetch job ticket when job number is detected
+    // Auto-fetch job ticket (from your working version)
     async function autoFetchAndSetPdf(jobNumber) {
-        if (!jobNumber) return;
-        addDebugLog('autoFetchAndSetPdf - fetching', jobNumber);
+        const pdfStatus = document.getElementById('pdfStatus');
+        const viewBtn = document.getElementById('viewJobTicketBtn');
+        const removeBtn = document.getElementById('removePdfBtn');
+        const fileInput = document.getElementById('jobTicketPdf');
+        
         try {
+            addDebugLog('autoFetchAndSetPdf - starting', jobNumber);
+            pdfStatus.textContent = '⏳ Fetching job ticket from Lithographix...';
+            pdfStatus.className = 'pdf-status info';
+            
             const pdfBytes = await fetchJobTicketPDF(jobNumber);
             const pdfFile = new File([pdfBytes], `${jobNumber}_JobTicket.pdf`, { type: 'application/pdf' });
+            
             const dataTransfer = new DataTransfer();
             dataTransfer.items.add(pdfFile);
-            document.getElementById('jobTicketPdf').files = dataTransfer.files;
-            currentJobNumber = jobNumber;
+            fileInput.files = dataTransfer.files;
             currentPdfFile = pdfFile;
-            document.getElementById('pdfStatus').textContent = `✅ Auto-loaded job ticket for ${jobNumber}`;
-            document.getElementById('pdfStatus').className = 'pdf-status';
-            document.getElementById('viewJobTicketBtn').style.display = 'inline-block';
-            document.getElementById('removePdfBtn').style.display = 'inline-block';
-        } catch (err) {
-            addDebugLog('autoFetchAndSetPdf - failed', err.message);
-            document.getElementById('pdfStatus').textContent = `⚠️ Could not auto-fetch: ${err.message}`;
-            document.getElementById('pdfStatus').className = 'pdf-status error';
+            currentJobNumber = jobNumber;
+            
+            pdfStatus.textContent = '✅ Job ticket auto-loaded from Lithographix';
+            pdfStatus.className = 'pdf-status';
+            viewBtn.style.display = 'inline-block';
+            removeBtn.style.display = 'inline-block';
+            addDebugLog('autoFetchAndSetPdf - success', jobNumber);
+            
+        } catch (error) {
+            addDebugLog('autoFetchAndSetPdf - error', error.message);
+            pdfStatus.textContent = `⚠️ Could not auto-fetch: ${error.message}`;
+            pdfStatus.className = 'pdf-status error';
+            viewBtn.style.display = 'none';
         }
     }
     
     function updatePdfButtons() {
-        const hasFile = document.getElementById('jobTicketPdf').files.length > 0;
-        document.getElementById('viewJobTicketBtn').style.display = hasFile && currentJobNumber ? 'inline-block' : 'none';
-        document.getElementById('removePdfBtn').style.display = hasFile ? 'inline-block' : 'none';
+        const fileInput = document.getElementById('jobTicketPdf');
+        const viewBtn = document.getElementById('viewJobTicketBtn');
+        const removeBtn = document.getElementById('removePdfBtn');
+        
+        if (fileInput.files.length > 0 && currentJobNumber) {
+            viewBtn.style.display = 'inline-block';
+            removeBtn.style.display = 'inline-block';
+        } else if (fileInput.files.length > 0) {
+            removeBtn.style.display = 'inline-block';
+            viewBtn.style.display = 'none';
+        } else {
+            viewBtn.style.display = 'none';
+            removeBtn.style.display = 'none';
+        }
     }
     
     document.getElementById('viewJobTicketBtn').addEventListener('click', () => {
-        if (currentJobNumber) window.open(`https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${currentJobNumber}`, '_blank');
-        else alert('No job number available.');
+        if (currentJobNumber) {
+            window.open(`https://webapps.lithographix.com/jt/jobticket.pdf?JobNo=${currentJobNumber}`, '_blank');
+        } else {
+            alert('No job number available.');
+        }
     });
+    
     document.getElementById('removePdfBtn').addEventListener('click', () => {
-        document.getElementById('jobTicketPdf').value = '';
+        const fileInput = document.getElementById('jobTicketPdf');
+        fileInput.value = '';
         currentJobNumber = null;
         currentPdfFile = null;
         updatePdfButtons();
         document.getElementById('pdfStatus').textContent = '📄 PDF removed';
         document.getElementById('pdfStatus').className = 'pdf-status';
     });
+    
     document.getElementById('jobTicketPdf').addEventListener('change', () => {
-        if (!document.getElementById('jobTicketPdf').files.length) { 
-            currentJobNumber = null; 
-            currentPdfFile = null; 
+        if (document.getElementById('jobTicketPdf').files.length === 0) {
+            currentJobNumber = null;
+            currentPdfFile = null;
         }
         updatePdfButtons();
     });
@@ -680,12 +710,6 @@
             const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'); 
             if (!files.length) return; 
             populateFormBlockWithFiles(blockDiv, files);
-            
-            const firstFileName = cleanFileName(files[0].name);
-            const jobNumber = extractJobNumber(firstFileName);
-            if (jobNumber && !currentJobNumber) {
-                await autoFetchAndSetPdf(jobNumber);
-            }
         });
         const headerHtml = `<h4><span>${formEmoji}</span><button class="remove-btn" onclick="removeFormBlock('${blockId}','${formEmoji}')">Remove</button></h4>
             <div class="form-group"><label>Form Type:</label><select class="formTypeSelect" data-block-id="${blockId}">
@@ -731,6 +755,13 @@
             if (type === 'default' || type === 'billboard') inputs = block.querySelectorAll('.defaultFileName');
             else if (type === 'spectacular') inputs = block.querySelectorAll('.specFileName');
             if (inputs) { files.forEach((file,i) => { if(inputs[i]) inputs[i].value = cleanFileName(file.name); }); }
+            
+            // Auto-fetch PDF from Lithographix using the first file's job number
+            const firstFileName = files[0].name;
+            const jobNumber = extractJobNumber(firstFileName);
+            if (jobNumber && !currentJobNumber) {
+                autoFetchAndSetPdf(jobNumber);
+            }
         }, 50);
     }
     
@@ -785,6 +816,7 @@
         const jobNumber = currentJobNumber || (forms[0]?.versions[0]?.fileName?.match(/^(\d{6})/)?.[1] || 'Unknown');
         
         try {
+            addDebugLog('Submit - started', jobNumber);
             const pdfText = await extractPdfText(fileInput.files[0]);
             const pdfData = parsePDF(pdfText);
             const { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
@@ -821,10 +853,10 @@
                 addDebugLog('Downloaded', link.download);
             }
             
-            addDebugLog('Success', `${pages.length} FDF files created for job ${jobNumber}`);
+            addDebugLog('Submit - success', `${pages.length} FDF files created for job ${jobNumber}`);
             
         } catch (err) {
-            addDebugLog('Submit Error', err.message);
+            addDebugLog('Submit - error', err.message);
             alert('Error generating RIP list: ' + err.message);
         }
     });
