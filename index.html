@@ -574,113 +574,148 @@
 }
 
     function generateRIPList(formsArray, pdfData) {
-        addDebugLog('generateRIPList - started', `Forms: ${formsArray.length}, PDF data: ${pdfData.size}`);
-        const fileNames = [];
-        const versionsUsed = [];
-        let firstFormInfo = null;
-        let hasMultipleVersionsInAnyForm = false;
-        let previousFormNumber = null;
-        const rowLabels = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+    addDebugLog('generateRIPList - started', `Forms: ${formsArray.length}, PDF data: ${pdfData.size}`);
+    const fileNames = [];
+    const versionsUsed = [];
+    let firstFormInfo = null;
+    let hasMultipleVersionsInAnyForm = false;
+    let previousFormNumber = null;
+    const rowLabels = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+    
+    // Special mapping for multi-character version codes
+    const versionMapping = {
+        'MM01': 'MM',
+        'MM02': 'MM',
+        'PP01': 'PP',
+        'PP02': 'PP',
+        'PP03': 'PP',
+        'PP04': 'PP'
+    };
+    
+    function getFormNumber(versionCode) {
+        const digitMatch = versionCode.match(/[A-Z](\d+)/i);
+        if (digitMatch) return parseInt(digitMatch[1], 10);
+        const letter = versionCode.toUpperCase();
+        if (letter.length === 1 && /[A-Z]/.test(letter)) return letter.charCodeAt(0) - 64;
+        return 1;
+    }
+    
+    for (let formIdx = 0; formIdx < formsArray.length; formIdx++) {
+        const form = formsArray[formIdx];
+        const formType = (form.type || 'default').toLowerCase();
+        const versions = (form.versions || []).filter(v => v.fileName && v.fileName.trim());
+        if (!versions.length) continue;
         
-        function getFormNumber(versionCode) {
-            const digitMatch = versionCode.match(/[A-Z](\d+)/i);
-            if (digitMatch) return parseInt(digitMatch[1], 10);
-            const letter = versionCode.toUpperCase();
-            if (letter.length === 1 && /[A-Z]/.test(letter)) return letter.charCodeAt(0) - 64;
-            return 1;
+        const firstVersion = versions[0];
+        const firstParts = firstVersion.fileName.split('_');
+        const firstVersionCode = firstParts.length >= 2 ? firstParts[1].toUpperCase() : '';
+        let formNumber = firstVersionCode ? getFormNumber(firstVersionCode) : formIdx + 1;
+        const formNumberPadded = String(formNumber).padStart(3, '0');
+        
+        if (versions.length > 1) hasMultipleVersionsInAnyForm = true;
+        const isMultiFileForm = versions.length > 1 && versions.some(v => v.tileNum && v.tileNum !== '');
+        
+        if (previousFormNumber !== null && previousFormNumber !== formNumber) {
+            for (let i = 0; i < 3; i++) fileNames.push('');
         }
         
-        for (let formIdx = 0; formIdx < formsArray.length; formIdx++) {
-            const form = formsArray[formIdx];
-            const formType = (form.type || 'default').toLowerCase();
-            const versions = (form.versions || []).filter(v => v.fileName && v.fileName.trim());
-            if (!versions.length) continue;
+        let firstVersionInForm = true;
+        
+        for (let vIdx = 0; vIdx < versions.length; vIdx++) {
+            const version = versions[vIdx];
+            const fileName = version.fileName;
+            const parts = fileName.split('_');
+            let versionCode = parts.length >= 2 ? parts[1].toUpperCase() : '';
+            if (!versionCode) continue;
             
-            const firstVersion = versions[0];
-            const firstParts = firstVersion.fileName.split('_');
-            const firstVersionCode = firstParts.length >= 2 ? firstParts[1].toUpperCase() : '';
-            let formNumber = firstVersionCode ? getFormNumber(firstVersionCode) : formIdx + 1;
-            const formNumberPadded = String(formNumber).padStart(3, '0');
+            // Map multi-character versions to their group (e.g., MM01 -> MM)
+            let searchCode = versionMapping[versionCode] || versionCode;
             
-            if (versions.length > 1) hasMultipleVersionsInAnyForm = true;
-            const isMultiFileForm = versions.length > 1 && versions.some(v => v.tileNum && v.tileNum !== '');
+            // Try to find version info
+            let versionInfo = pdfData.get(searchCode);
+            let actualVersionCode = searchCode;
             
-            if (previousFormNumber !== null && previousFormNumber !== formNumber) {
-                for (let i = 0; i < 3; i++) fileNames.push('');
+            // If not found, check if this individual letter is part of a grouped code
+            if (!versionInfo && searchCode.length === 1) {
+                for (const [groupCode, groupInfo] of pdfData.entries()) {
+                    // Check if groupCode contains this single letter (e.g., "AB" contains "A" or "B")
+                    if (groupCode.includes(searchCode) && groupCode.length > 1) {
+                        versionInfo = groupInfo;
+                        actualVersionCode = groupCode;
+                        addDebugLog(`generateRIPList - mapped ${searchCode} to grouped code ${groupCode}`, '');
+                        break;
+                    }
+                }
             }
             
-            let firstVersionInForm = true;
+            // Also try direct match with original versionCode
+            if (!versionInfo) {
+                versionInfo = pdfData.get(versionCode);
+                if (versionInfo) actualVersionCode = versionCode;
+            }
             
-            for (let vIdx = 0; vIdx < versions.length; vIdx++) {
-                const version = versions[vIdx];
-                const fileName = version.fileName;
-                const parts = fileName.split('_');
-                const versionCode = parts.length >= 2 ? parts[1].toUpperCase() : '';
-                if (!versionCode) continue;
-                
-                const versionInfo = pdfData.get(versionCode);
-                if (!versionInfo) {
-                    addDebugLog(`generateRIPList - version ${versionCode} not found`, '');
-                    continue;
-                }
-                
-                let quantity = versionInfo.quantity;
-                let panelCount = versionInfo.panelCount;
-                const material = versionInfo.material;
-                const dueDate = versionInfo.dueDate;
-                const printMode = versionInfo.printMode;
-                const laminated = versionInfo.laminated;
-                const zundCut = versionInfo.zundCut;
-                
-                versionsUsed.push(versionCode);
-                
-                if (!firstFormInfo) {
-                    firstFormInfo = { quantity, material, dueDate, printMode, laminated, zundCut, isMultiFile: isMultiFileForm };
-                }
-                
-                if (!firstVersionInForm) {
-                    for (let i = 0; i < 3; i++) fileNames.push('');
-                }
-                firstVersionInForm = false;
-                
-                fileNames.push(`${formNumberPadded}_${fileName}`);
-                
-                if (isMultiFileForm) {
-                    fileNames.push(`${formNumberPadded} x${quantity}`);
-                } else if (formType === 'billboard') {
-                    for (let repeat = 0; repeat < quantity; repeat++) {
-                        for (let panel = 1; panel <= panelCount; panel++) {
-                            fileNames.push(`${formNumberPadded}_A${panel}`);
-                        }
+            if (!versionInfo) {
+                addDebugLog(`generateRIPList - version ${versionCode} not found`, '');
+                continue;
+            }
+            
+            let quantity = versionInfo.quantity;
+            let panelCount = versionInfo.panelCount;
+            const material = versionInfo.material;
+            const dueDate = versionInfo.dueDate;
+            const printMode = versionInfo.printMode;
+            const laminated = versionInfo.laminated;
+            const zundCut = versionInfo.zundCut;
+            
+            versionsUsed.push(versionCode);
+            
+            if (!firstFormInfo) {
+                firstFormInfo = { quantity, material, dueDate, printMode, laminated, zundCut, isMultiFile: isMultiFileForm };
+            }
+            
+            if (!firstVersionInForm) {
+                for (let i = 0; i < 3; i++) fileNames.push('');
+            }
+            firstVersionInForm = false;
+            
+            fileNames.push(`${formNumberPadded}_${fileName}`);
+            
+            if (isMultiFileForm) {
+                fileNames.push(`${formNumberPadded} x${quantity}`);
+            } else if (formType === 'billboard') {
+                for (let repeat = 0; repeat < quantity; repeat++) {
+                    for (let panel = 1; panel <= panelCount; panel++) {
+                        fileNames.push(`${formNumberPadded}_A${panel}`);
                     }
-                } else if (formType === 'spectacular') {
-                    const tilesPerRow = version.tilesPerRow || [];
-                    if (tilesPerRow.length) {
-                        for (let row = 0; row < tilesPerRow.length; row++) {
-                            const tilesInRow = parseInt(tilesPerRow[row]) || 0;
-                            const rowLabel = rowLabels[row] || String.fromCharCode(65 + row);
-                            for (let tile = 1; tile <= tilesInRow; tile++) {
-                                fileNames.push(`${formNumberPadded}_${rowLabel}${tile}`);
-                            }
-                        }
-                    } else {
-                        for (let panel = 1; panel <= panelCount; panel++) {
-                            fileNames.push(`${formNumberPadded}_A${panel}`);
+                }
+            } else if (formType === 'spectacular') {
+                const tilesPerRow = version.tilesPerRow || [];
+                if (tilesPerRow.length) {
+                    for (let row = 0; row < tilesPerRow.length; row++) {
+                        const tilesInRow = parseInt(tilesPerRow[row]) || 0;
+                        const rowLabel = rowLabels[row] || String.fromCharCode(65 + row);
+                        for (let tile = 1; tile <= tilesInRow; tile++) {
+                            fileNames.push(`${formNumberPadded}_${rowLabel}${tile}`);
                         }
                     }
                 } else {
-                    if (panelCount > 1) {
-                        fileNames.push(`${formNumberPadded}_A1-A${panelCount} x${quantity}`);
-                    } else {
-                        fileNames.push(`x${quantity}`);
+                    for (let panel = 1; panel <= panelCount; panel++) {
+                        fileNames.push(`${formNumberPadded}_A${panel}`);
                     }
                 }
+            } else {
+                if (panelCount > 1) {
+                    fileNames.push(`${formNumberPadded}_A1-A${panelCount} x${quantity}`);
+                } else {
+                    fileNames.push(`x${quantity}`);
+                }
             }
-            previousFormNumber = formNumber;
         }
-        addDebugLog('generateRIPList - total file names', fileNames.length);
-        return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
+        previousFormNumber = formNumber;
     }
+    addDebugLog('generateRIPList - total file names', fileNames.length);
+    return { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm };
+}
 
     function paginateRipList(allFileNames) {
         const LINES_PER_PAGE = 48;
