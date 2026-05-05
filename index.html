@@ -1251,7 +1251,7 @@ document.getElementById('submitBtn').addEventListener('click', async () => {
         let pdfData = parsePDF(pdfText);
         let usedOllama = false;
         
-        // ----- STEP 2: If HTML parser failed (no versions found), try Ollama -----
+        // ----- STEP 2: If HTML parser failed (no versions found), try Ollama  -----
         if (pdfData.size === 0) {
             addDebugLog('Submit - HTML parser failed, falling back to Ollama', '');
             const statusDiv = document.getElementById('pdfStatus');
