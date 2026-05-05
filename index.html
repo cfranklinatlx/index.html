@@ -1119,6 +1119,232 @@
     window.addEventListener('resize', function() {
         document.querySelectorAll('input[type="text"]').forEach(adjustFontSize);
     });
+// ========== OLLAMA AI FALLBACK ==========
+// Add this after your existing parsePDF function
+
+const OLLAMA_URL = "http://localhost:11434/api/generate";
+const OLLAMA_MODEL = "llama3.2:3b";
+
+async function extractWithOllama(pdfText, jobNumber) {
+    addDebugLog('Ollama - starting extraction', `Job: ${jobNumber}, Text length: ${pdfText.length}`);
+    
+    const prompt = `Extract job ticket information from this PDF text. Return ONLY valid JSON with these exact fields:
+    - versions: an object where keys are version codes (like "F1", "M", "A1") and values have: quantity (number), panelCount (number), material (string), dueDate (string in MM/DD/YYYY format)
+    
+    Look for patterns like:
+    - Version F1_35X10_LEFT → version code "F1"
+    - Panel_M_100 → version code "M"  
+    - F2_35X15_RIGHT → version code "F2"
+    
+    Text from PDF:
+    ${pdfText.substring(0, 4000)}
+    
+    Return ONLY valid JSON. Example: {"versions": {"F1": {"quantity": 1, "panelCount": 1, "material": "8.5oz Vinyl", "dueDate": "04/21/2026"}}, "customer": "FOCUS FEATURES", "jobNumber": "151730"}`;
+    
+    try {
+        const response = await fetch(OLLAMA_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: OLLAMA_MODEL,
+                prompt: prompt,
+                stream: false,
+                temperature: 0.1
+            })
+        });
+        
+        const data = await response.json();
+        addDebugLog('Ollama - raw response', data.response);
+        
+        // Parse the JSON response
+        let aiResult;
+        try {
+            // Extract JSON from response (in case there's extra text)
+            const jsonMatch = data.response.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                aiResult = JSON.parse(jsonMatch[0]);
+            } else {
+                aiResult = JSON.parse(data.response);
+            }
+        } catch (e) {
+            addDebugLog('Ollama - JSON parse error', e.message);
+            return null;
+        }
+        
+        addDebugLog('Ollama - parsed result', Object.keys(aiResult.versions || {}).join(', '));
+        
+        // Convert AI result to same Map format as parsePDF
+        const resultMap = new Map();
+        if (aiResult.versions) {
+            for (const [versionCode, versionData] of Object.entries(aiResult.versions)) {
+                resultMap.set(versionCode.toUpperCase(), {
+                    quantity: versionData.quantity || 1,
+                    panelCount: versionData.panelCount || 1,
+                    material: versionData.material || '',
+                    dueDate: versionData.dueDate || '',
+                    printMode: '',
+                    laminated: false,
+                    zundCut: false,
+                    mainVersion: versionCode.toUpperCase()
+                });
+            }
+        }
+        
+        // Store extracted metadata
+        window.extractedPdfMeta = {
+            customer: aiResult.customer || '',
+            jobNumber: aiResult.jobNumber || jobNumber
+        };
+        
+        return resultMap;
+        
+    } catch (err) {
+        addDebugLog('Ollama - error', err.message);
+        return null;
+    }
+}
+
+// ========== MODIFIED SUBMIT HANDLER (replace your existing submit handler) ==========
+// Replace your existing document.getElementById('submitBtn').addEventListener with this:
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+    const rippedBy = document.getElementById('rippedBy').value;
+    const printer = document.getElementById('printer').value;
+    const colorMatch = document.getElementById('colorMatch').value;
+    const fileInput = document.getElementById('jobTicketPdf');
+    
+    if (!fileInput.files.length) { 
+        addDebugLog('Submit Error', 'No job ticket PDF uploaded');
+        alert('Please upload a job ticket PDF or drop a file to auto-fetch it.');
+        return; 
+    }
+    
+    const forms = [];
+    document.querySelectorAll('.form-block').forEach((block, idx) => {
+        const typeSelect = block.querySelector('.formTypeSelect');
+        const type = typeSelect.value;
+        const formEmoji = block.querySelector('h4 span').textContent;
+        const formData = { type, order: idx+1, formIdentifier: formEmoji };
+        if (type === 'default' || type === 'billboard') {
+            const versions = [];
+            block.querySelectorAll('.defaultFileName').forEach(inp => versions.push({ fileName: inp.value, tileNum: '' }));
+            formData.versions = versions;
+        } else if (type === 'spectacular') {
+            const versions = [];
+            block.querySelectorAll('.specFileName').forEach((inp, vIdx) => {
+                const tiles = [];
+                block.querySelectorAll(`.specTileCount[data-version="${vIdx+1}"]`).forEach(t => tiles.push(t.value));
+                versions.push({ fileName: inp.value, tilesPerRow: tiles });
+            });
+            formData.versions = versions;
+        }
+        forms.push(formData);
+    });
+    
+    const jobNumber = currentJobNumber || (forms[0]?.versions[0]?.fileName?.match(/^(\d{6})/)?.[1] || 'Unknown');
+    
+    try {
+        addDebugLog('Submit - started', jobNumber);
+        const pdfText = await extractPdfText(fileInput.files[0]);
+        
+        // ----- STEP 1: Try HTML parser first -----
+        let pdfData = parsePDF(pdfText);
+        let usedOllama = false;
+        
+        // ----- STEP 2: If HTML parser failed (no versions found), try Ollama -----
+        if (pdfData.size === 0) {
+            addDebugLog('Submit - HTML parser failed, falling back to Ollama', '');
+            const statusDiv = document.getElementById('pdfStatus');
+            const originalText = statusDiv.textContent;
+            statusDiv.textContent = '🤖 HTML parser failed. Trying AI (Ollama)...';
+            statusDiv.className = 'pdf-status info';
+            
+            const aiData = await extractWithOllama(pdfText, jobNumber);
+            
+            if (aiData && aiData.size > 0) {
+                pdfData = aiData;
+                usedOllama = true;
+                statusDiv.textContent = '✅ AI (Ollama) successfully extracted data!';
+                addDebugLog('Submit - Ollama success', `Found ${pdfData.size} versions`);
+            } else {
+                statusDiv.textContent = originalText;
+                addDebugLog('Submit - Ollama also failed', 'No versions extracted');
+            }
+            
+            // Reset status after 3 seconds
+            setTimeout(() => {
+                if (document.getElementById('pdfStatus').textContent.includes('AI')) {
+                    document.getElementById('pdfStatus').textContent = '✅ Job ticket loaded';
+                    document.getElementById('pdfStatus').className = 'pdf-status';
+                }
+            }, 3000);
+        }
+        
+        if (pdfData.size === 0) {
+            throw new Error('Could not extract any version information from PDF. Try a different job ticket.');
+        }
+        
+        const { fileNames, versionsUsed, firstFormInfo, hasMultipleVersionsInAnyForm } = generateRIPList(forms, pdfData);
+        const pages = paginateRipList(fileNames);
+        
+        if (!pages.length) throw new Error('No pages generated');
+        
+        const topData = {
+            customer: window.extractedPdfMeta?.customer || '',
+            job_number: window.extractedPdfMeta?.jobNumber || jobNumber,
+            printer: printer,
+            ripped_by: rippedBy,
+            color_match: colorMatch,
+            quantity: (hasMultipleVersionsInAnyForm || firstFormInfo?.isMultiFile) ? '' : (firstFormInfo?.quantity || ''),
+            material: firstFormInfo?.material || '',
+            size: '',
+            print_mode: firstFormInfo?.printMode || '',
+            due_date: firstFormInfo?.dueDate || '',
+            laminated: firstFormInfo?.laminated || false,
+            zund_cut: firstFormInfo?.zundCut || false,
+            version: versionsUsed.join(', ')
+        };
+        
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}`;
+        
+        for (let i = 0; i < pages.length; i++) {
+            const pageLines = pages[i].lines;
+            const fdfContent = generateFDF(pageLines, topData, i+1);
+            const blob = new Blob([fdfContent], { type: 'text/plain' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${jobNumber}_${timestamp}_page${i+1}.fdf`;
+            link.click();
+            addDebugLog('Downloaded', link.download);
+        }
+        
+        const usedMethod = usedOllama ? ' (AI fallback used)' : '';
+        addDebugLog('Submit - success', `${pages.length} FDF files created for job ${jobNumber}${usedMethod}`);
+        
+        if (usedOllama) {
+            // Optional: Show a subtle indicator that AI was used
+            const statusDiv = document.getElementById('pdfStatus');
+            statusDiv.textContent = '✨ AI fallback succeeded! FDF files downloaded.';
+            statusDiv.className = 'pdf-status';
+            setTimeout(() => {
+                if (document.getElementById('pdfStatus').textContent.includes('succeeded')) {
+                    statusDiv.textContent = '✅ Job ticket loaded';
+                }
+            }, 4000);
+        }
+        
+    } catch (err) {
+        addDebugLog('Submit - error', err.message);
+        alert('Error generating RIP list: ' + err.message);
+    }
+});
 </script>
 </body>
 </html>
